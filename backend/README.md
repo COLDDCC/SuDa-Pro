@@ -25,7 +25,26 @@ export WX_SECRET=你的小程序secret
 ```
 
 没有配置时，`System.Login.wechatLogin` 会报错，此时用 `System.Login.devLogin`
-（传任意 `identifier`）跳过微信直接登录，方便本地联调。
+（传任意 `identifier`）跳过微信直接登录，方便本地联调。**一旦配置了
+`WX_APPID`/`WX_SECRET`，`devLogin` 会自动禁用**（403），不需要额外记得关掉它。
+
+## 仓库/客服操作（staff_key）
+
+标记包裹入库、标记订单发货、追加物流轨迹这三个接口不走会员 token（不然任何登录用户
+都能操作别人的包裹/订单），MVP 阶段还没有员工账号体系，先用一个共享密钥顶上：
+
+```bash
+export STAFF_KEY=随便设一个只有你和员工知道的字符串
+```
+
+不设置这个变量时，这三个接口直接拒绝所有请求：
+
+- `System.Order.markInbound`(goods_id, staff_key) — 标记包裹已入库
+- `System.Order.markShipped`(order_id, inter_order, staff_key) — 标记订单已发货，写入国际转运单号
+- `System.Order.addTrack`(order_id, status_text, location, staff_key) — 追加一条物流轨迹
+
+这几个接口目前没有对应的小程序页面（后台管理页是后续要做的事），先用 `curl`
+或接口调试工具手动调用。
 
 ## 接口约定
 

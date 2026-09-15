@@ -1,8 +1,17 @@
 """System.Order.* — 预报、包裹(货物)管理、下单、订单查询、物流轨迹"""
 from decimal import Decimal, ROUND_UP
 
+from ..config import STAFF_KEY
 from ..errors import ApiError
 from .. import models
+
+
+def _require_staff(params):
+    """仓库/客服操作的权限校验。MVP 阶段没有员工账号体系，先用共享密钥顶上，
+    比"任何登录用户都能操作别人的包裹/订单"要安全。"""
+    key = params.get("staff_key")
+    if not STAFF_KEY or key != STAFF_KEY:
+        raise ApiError("无权限执行该操作", code=403)
 
 
 # ---- 预报 / 包裹(竞品叫"商品" goods，其实就是包裹里的物品) ----
@@ -114,14 +123,16 @@ def delectGood(db, member, params):
 
 
 def markInbound(db, member, params):
-    """后台/仓库人员标记包裹已入库（MVP 阶段手动操作，无需鉴权分级先放这里）"""
+    """仓库人员标记包裹已入库。不挂会员 token，用 staff_key 校验（见 _require_staff）。"""
+    _require_staff(params)
     goods_id = params.get("goods_id") or params.get("id")
     p = db.query(models.Package).filter_by(id=goods_id).first()
     if not p:
         raise ApiError("包裹不存在")
+    if p.status != models.Package.STATUS_PENDING:
+        raise ApiError("包裹当前状态不是待入库")
     p.status = models.Package.STATUS_INBOUND
-    from .. import models as m
-    p.inbound_at = m.now()
+    p.inbound_at = models.now()
     db.commit()
     return _pkg_dict(p)
 
@@ -294,3 +305,48 @@ def isuse(db, member, params):
     line_id = params.get("id")
     l = db.query(models.Line).filter_by(id=line_id).first()
     return {"usable": bool(l and l.is_active)}
+
+
+def markShipped(db, member, params):
+    """仓库人员标记订单已发货：填写国际转运单号，包裹状态流转为已发货，
+    并自动追加一条物流轨迹。不挂会员 token，用 staff_key 校验。"""
+    _require_staff(params)
+    order_id = params.get("order_id") or params.get("id")
+    inter_order = params.get("inter_order")
+    if not inter_order:
+        raise ApiError("请填写国际转运单号")
+
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    if o.status != models.Order.STATUS_PENDING:
+        raise ApiError("订单当前状态不允许标记发货")
+
+    o.status = models.Order.STATUS_SHIPPED
+    o.inter_order = inter_order
+    o.shipped_at = models.now()
+    for item in o.items:
+        item.package.status = models.Package.STATUS_SHIPPED
+    db.add(models.OrderTrack(
+        order_id=o.id,
+        status_text=f"已发出，国际转运单号 {inter_order}",
+        location=params.get("location", "日本仓"),
+    ))
+    db.commit()
+    return _order_summary(o)
+
+
+def addTrack(db, member, params):
+    """客服/仓库为订单追加一条物流轨迹节点。不挂会员 token，用 staff_key 校验。"""
+    _require_staff(params)
+    order_id = params.get("order_id") or params.get("id")
+    status_text = params.get("status_text")
+    if not status_text:
+        raise ApiError("请填写轨迹内容")
+
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    db.add(models.OrderTrack(order_id=o.id, status_text=status_text, location=params.get("location", "")))
+    db.commit()
+    return {"ok": True}

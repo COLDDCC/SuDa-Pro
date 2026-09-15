@@ -56,17 +56,23 @@ Page({
     this.setData({ lineId: line.id, selectedLineName: line.name }, () => this.recalc());
   },
 
+  // 重量只是本地求和，展示用的运费一律问后端要（System.Address.estimateFee），
+  // 不在前端重新实现一遍四舍五入逻辑，避免和后端算出来的最终金额不一致。
   recalc() {
     const selectedPkgs = this.data.packages.filter((p) => this.data.selectedIds.includes(p.id));
     const weight = selectedPkgs.reduce((sum, p) => sum + Number(p.netwt), 0);
-    const line = this.data.lines.find((l) => l.id === this.data.lineId);
-    if (!line || weight <= 0) {
-      this.setData({ totalWeight: weight.toFixed(2), totalFee: '0' });
+    this.setData({ totalWeight: weight.toFixed(2) });
+
+    if (!this.data.lineId || weight <= 0) {
+      this.setData({ totalFee: '0' });
       return;
     }
-    const billable = Math.max(weight, Number(line.min_weight));
-    const fee = (billable * Number(line.price_per_kg)).toFixed(2);
-    this.setData({ totalWeight: weight.toFixed(2), totalFee: fee });
+    call('System.Address.estimateFee', { weight })
+      .then((result) => {
+        const matched = result.find((r) => r.line_id === this.data.lineId);
+        this.setData({ totalFee: matched ? matched.fee : '0' });
+      })
+      .catch(() => {});
   },
 
   onRemarkInput(e) {

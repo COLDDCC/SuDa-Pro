@@ -68,8 +68,12 @@ def wechatLogin(db, member, params):
 
 def devLogin(db, member, params):
     """本地联调用：跳过微信，直接用手机号/设备号登录或创建账号。
-    生产环境应禁用或加验证码保护。
+
+    一旦配置了真实的 WX_APPID/WX_SECRET（意味着这是要接真实微信登录的环境），
+    这个接口自动禁用，不需要额外开关，避免有人忘记关掉它变成后门。
     """
+    if WX_APPID and WX_SECRET:
+        raise ApiError("当前环境已配置微信登录，devLogin 已禁用", code=403)
     identifier = params.get("identifier") or "dev-user"
     fake_openid = f"dev_{identifier}"
     m = db.query(models.Member).filter_by(openid=fake_openid).first()

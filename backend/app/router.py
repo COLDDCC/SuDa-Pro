@@ -32,6 +32,10 @@ PUBLIC_METHODS = {
     "System.Address.noticeInfo",
     "System.Shop.ShopListByConditions",
     "System.Shop.getShopMessage",
+    # 仓库/客服操作：不挂在会员 token 上，改由 staff_key 校验（见 order.py 的 _require_staff）
+    "System.Order.markInbound",
+    "System.Order.markShipped",
+    "System.Order.addTrack",
 }
 
 
@@ -50,6 +54,10 @@ def resolve(method: str):
         raise MethodNotFound(method)
     func = getattr(module, func_name, None)
     if func is None or func_name.startswith("_"):
+        raise MethodNotFound(method)
+    # 只允许调用这个模块自己定义的函数，防止 getattr 意外命中模块里 import
+    # 进来的类/子模块（比如 order.py 里的 Decimal、models）。
+    if getattr(func, "__module__", None) != module.__name__:
         raise MethodNotFound(method)
     requires_auth = method not in PUBLIC_METHODS
     return func, requires_auth

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -7,6 +9,8 @@ from .router import resolve, MethodNotFound
 from .errors import ApiError
 from .auth import get_current_member
 from . import seed
+
+logger = logging.getLogger("suda")
 
 Base.metadata.create_all(bind=engine)
 
@@ -51,6 +55,7 @@ async def api_entry(request: Request, db: Session = Depends(get_db)):
     except ApiError as e:
         db.rollback()
         return {"code": e.code, "msg": e.msg, "data": None}
-    except Exception as e:  # pragma: no cover - safety net
+    except Exception:  # pragma: no cover - safety net
         db.rollback()
-        return {"code": 500, "msg": f"服务器错误: {e}", "data": None}
+        logger.exception("Unhandled error calling %s", method)
+        return {"code": 500, "msg": "服务器内部错误，请稍后重试", "data": None}
