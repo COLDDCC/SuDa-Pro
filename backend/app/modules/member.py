@@ -1,8 +1,12 @@
 """System.Member.* — 会员信息、收件地址、日本仓"""
+import re
 from decimal import Decimal
 
 from ..errors import ApiError
 from .. import models, regions
+
+_MOBILE_RE = re.compile(r'^1\d{10}$')
+_IDNUMBER_RE = re.compile(r'^\d{15}(\d{2}[0-9Xx])?$')
 
 
 def _member_dict(m: models.Member):
@@ -100,6 +104,7 @@ def checkConsignerInfo(db, member, params):
 def addAddress(db, member, params):
     a = models.Address(member_id=member.id)
     _apply_address_fields(a, params)
+    _validate_address(a)
     if params.get("is_default") or db.query(models.Address).filter_by(member_id=member.id).count() == 0:
         _clear_default(db, member.id)
         a.is_default = True
@@ -115,6 +120,7 @@ def updateAddress(db, member, params):
     if not a:
         raise ApiError("地址不存在")
     _apply_address_fields(a, params)
+    _validate_address(a)
     if params.get("is_default"):
         _clear_default(db, member.id)
         a.is_default = True
@@ -130,6 +136,19 @@ def _apply_address_fields(a: models.Address, params):
         if field in params:
             setattr(a, field, params[field])
     _fill_region_names(a)
+
+
+def _validate_address(a: models.Address):
+    """前端已经做过一遍校验，但接口本身也是个边界——不能假设请求一定是从小程序
+    发过来的，尤其身份证号这种直接关系到报关能不能用的字段，后端必须自己再查一遍。"""
+    if not (a.consigner or "").strip():
+        raise ApiError("请填写收件人姓名")
+    if not _MOBILE_RE.match(a.mobile or ""):
+        raise ApiError("手机号格式不正确")
+    if not (a.address or "").strip():
+        raise ApiError("请填写详细地址")
+    if not _IDNUMBER_RE.match(a.idnumber or ""):
+        raise ApiError("身份证号格式不正确（报关需要实名）")
 
 
 def _clear_default(db, member_id):

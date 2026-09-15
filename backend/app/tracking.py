@@ -5,6 +5,7 @@
 不保证 100% 准，所以调用方永远要让用户能看到识别结果再确认/编辑。
 """
 import re
+import unicodedata
 
 # 按优先级排序：越靠前的格式越"像"快递单号，命中就优先用它。
 _PATTERNS = [
@@ -12,8 +13,10 @@ _PATTERNS = [
     re.compile(r'\b[A-Za-z]{2}\d{9}[A-Za-z]{2}\b'),
     # 日本国内快递常见的三段分组数字，例如 1234-5678-9012 / 1234 5678 9012
     re.compile(r'\b\d{4}[-\s]\d{4}[-\s]\d{4}\b'),
-    # 兜底：一长串 10~14 位数字（不少快递公司单号就是纯数字）
-    re.compile(r'\b\d{10,14}\b'),
+    # 兜底：一长串 10~14 位数字（不少快递公司单号就是纯数字，且经常紧跟在字母
+    # 前缀后面，比如 SF1234567890123，所以这里按"前后不是数字"来判断边界，
+    # 不用 \b —— \b 在字母紧贴数字时不生效，会漏掉这种格式）。
+    re.compile(r'(?<!\d)\d{10,14}(?!\d)'),
 ]
 
 
@@ -21,6 +24,9 @@ def guess_tracking_numbers(text: str):
     """返回文本里所有候选单号，按上面模式的优先级排序，去重但保留顺序。"""
     if not text:
         return []
+    # 日本单据里数字/分隔符经常是全角（１２３４－５６７８），NFKC 统一转成半角，
+    # 不然上面的正则一个都匹配不上。
+    text = unicodedata.normalize('NFKC', text)
     seen = set()
     candidates = []
     for pattern in _PATTERNS:
