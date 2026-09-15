@@ -87,20 +87,33 @@ def addforecast(db, member, params):
     if not good_name:
         raise ApiError("请填写品名")
 
+    count = _to_int(params.get("count"), 1, "数量")
+    netwt = _to_decimal(params.get("netwt"), "0", "净重")
+    price = _to_decimal(params.get("price"), "0", "商品价值")
+    cc_registered_price = _to_decimal(params.get("cc_registered_price"), "0", "海关申报价值")
+    export_unit_price = _to_decimal(params.get("export_unit_price"), "0", "出口单价")
+
+    # 净重直接决定运费怎么算（savePage 里按选中包裹的净重总和计费）：一个负数
+    # "包裹"就能把别的真实包裹的重量抵消掉，相当于免费搭车。数量/价值同理不能为负。
+    if count < 1:
+        raise ApiError("数量必须大于 0")
+    if netwt < 0 or price < 0 or cc_registered_price < 0 or export_unit_price < 0:
+        raise ApiError("净重/价值不能为负数")
+
     p = models.Package(
         member_id=member.id,
         shop_id=params.get("shop_id", 1),
         express_num=express_num,
         good_name=good_name,
-        count=_to_int(params.get("count"), 1, "数量"),
-        netwt=_to_decimal(params.get("netwt"), "0", "净重"),
-        price=_to_decimal(params.get("price"), "0", "商品价值"),
+        count=count,
+        netwt=netwt,
+        price=price,
         bar_code=params.get("bar_code", ""),
         brand_name_cn=params.get("brand_name_cn", ""),
         category=params.get("category", ""),
         spec=params.get("spec", ""),
-        cc_registered_price=_to_decimal(params.get("cc_registered_price"), "0", "海关申报价值"),
-        export_unit_price=_to_decimal(params.get("export_unit_price"), "0", "出口单价"),
+        cc_registered_price=cc_registered_price,
+        export_unit_price=export_unit_price,
         is_second_goods=bool(params.get("is_second_goods", False)),
         status=models.Package.STATUS_PENDING,
     )
