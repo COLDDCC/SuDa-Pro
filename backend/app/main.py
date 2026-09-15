@@ -1,7 +1,9 @@
 import logging
+import os
 
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .database import Base, engine, get_db
@@ -22,6 +24,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 仓库/客服后台（marks packages inbound, ships orders, pushes tracking updates）。
+# 纯静态页面 + staff_key，方便在没有专门后台系统前先用起来。
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/admin", StaticFiles(directory=os.path.join(_STATIC_DIR, "admin"), html=True), name="admin")
 
 
 @app.on_event("startup")

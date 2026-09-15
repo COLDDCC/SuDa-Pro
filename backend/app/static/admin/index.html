@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>XX转运Pro 后台</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa;
+    color: #1f2330;
+  }
+  header {
+    background: #2b6cff;
+    color: #fff;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  .key-box { display: flex; gap: 8px; align-items: center; }
+  .key-box input {
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: none;
+    width: 220px;
+  }
+  .key-box button, .tabs button, td button {
+    background: #ffffff;
+    color: #2b6cff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    padding: 16px 24px 0;
+  }
+  .tabs button.active {
+    background: #2b6cff;
+    color: #fff;
+  }
+  main { padding: 16px 24px 40px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .toolbar { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
+  .toolbar button {
+    background: #2b6cff;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(20,30,60,.05);
+  }
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    vertical-align: top;
+  }
+  th { background: #fafbfc; color: #666; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  .muted { color: #8a8f9c; font-size: 12px; }
+  .empty { padding: 40px; text-align: center; color: #b0b4bf; }
+  input.inline { padding: 5px 8px; border: 1px solid #ddd; border-radius: 6px; width: 160px; }
+  .row-flex { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .toast {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2330;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity .2s;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>XX转运Pro 后台（仓库/客服）</h1>
+  <div class="key-box">
+    <input id="staffKey" type="password" placeholder="staff_key（对应后端 STAFF_KEY）" />
+    <button onclick="saveKey()">保存</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="packages" onclick="switchTab('packages')">待入库包裹</button>
+  <button class="tab-btn" data-tab="pending-orders" onclick="switchTab('pending-orders')">待发货订单</button>
+  <button class="tab-btn" data-tab="shipped-orders" onclick="switchTab('shipped-orders')">运输中订单</button>
+</div>
+
+<main>
+  <div class="panel active" id="panel-packages">
+    <div class="toolbar"><button onclick="loadPackages()">刷新</button></div>
+    <table>
+      <thead><tr>
+        <th>会员</th><th>快递单号</th><th>品名</th><th>数量</th><th>净重(kg)</th><th>状态</th><th>操作</th>
+      </tr></thead>
+      <tbody id="packages-body"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-pending-orders">
+    <div class="toolbar"><button onclick="loadPendingOrders()">刷新</button></div>
+    <table>
+      <thead><tr>
+        <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th>
+      </tr></thead>
+      <tbody id="pending-orders-body"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-shipped-orders">
+    <div class="toolbar"><button onclick="loadShippedOrders()">刷新</button></div>
+    <table>
+      <thead><tr>
+        <th>订单号</th><th>会员</th><th>国际转运单号</th><th>追加物流轨迹</th>
+      </tr></thead>
+      <tbody id="shipped-orders-body"></tbody>
+    </table>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE_URL = location.origin;
+
+function getKey() {
+  return localStorage.getItem('suda_staff_key') || '';
+}
+
+function saveKey() {
+  const v = document.getElementById('staffKey').value.trim();
+  if (v) localStorage.setItem('suda_staff_key', v);
+  toast('已保存');
+  loadActivePanel();
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+async function call(method, params = {}) {
+  const body = { method, params: { ...params, staff_key: getKey() } };
+  const res = await fetch(`${BASE_URL}/api`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (json.code !== 0) {
+    toast(json.msg || '请求失败');
+    throw new Error(json.msg);
+  }
+  return json.data;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+const STATUS_TEXT = {
+  pending: '待入库', inbound: '已入库', ordered: '待发货', shipped: '已发货', cancelled: '已取消',
+};
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${tab}`));
+  loadActivePanel();
+}
+
+function loadActivePanel() {
+  const active = document.querySelector('.tab-btn.active').dataset.tab;
+  if (active === 'packages') loadPackages();
+  if (active === 'pending-orders') loadPendingOrders();
+  if (active === 'shipped-orders') loadShippedOrders();
+}
+
+async function loadPackages() {
+  const body = document.getElementById('packages-body');
+  body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffPendingPackages');
+    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无待处理包裹</td></tr>'; return; }
+    body.innerHTML = list.map((p) => `
+      <tr>
+        <td>${escapeHtml(p.member_nickname || '未设置昵称')}<div class="muted">${escapeHtml(p.member_mobile || '')}</div></td>
+        <td>${escapeHtml(p.express_num)}</td>
+        <td>${escapeHtml(p.good_name)}</td>
+        <td>${escapeHtml(p.count)}</td>
+        <td>${escapeHtml(p.netwt)}</td>
+        <td>${STATUS_TEXT[p.status] || p.status}</td>
+        <td>${p.status === 'pending' ? `<button onclick="markInbound(${p.id})">标记入库</button>` : '<span class="muted">已入库，等待客户下单</span>'}</td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }
+}
+
+async function markInbound(id) {
+  await call('System.Order.markInbound', { id });
+  toast('已标记入库');
+  loadPackages();
+}
+
+async function loadPendingOrders() {
+  const body = document.getElementById('pending-orders-body');
+  body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffOrders', { status: 'pending' });
+    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无待发货订单</td></tr>'; return; }
+    body.innerHTML = list.map((o) => `
+      <tr>
+        <td>${escapeHtml(o.order_no)}</td>
+        <td>${escapeHtml(o.member_nickname || '')}<div class="muted">${escapeHtml(o.member_mobile || '')}</div></td>
+        <td>${escapeHtml(o.address.consigner)} ${escapeHtml(o.address.mobile)}<div class="muted">${escapeHtml(o.address.province)}${escapeHtml(o.address.city)}${escapeHtml(o.address.district)}${escapeHtml(o.address.address)}</div></td>
+        <td>${escapeHtml(o.line_name)}</td>
+        <td>${escapeHtml(o.item_count)}件 / ${escapeHtml(o.total_weight)}kg</td>
+        <td>
+          <div class="row-flex">
+            <input class="inline" id="inter-${o.id}" placeholder="国际转运单号" />
+            <button onclick="markShipped(${o.id})">标记发货</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>'; }
+}
+
+async function markShipped(id) {
+  const inter = document.getElementById(`inter-${id}`).value.trim();
+  if (!inter) { toast('请填写国际转运单号'); return; }
+  await call('System.Order.markShipped', { order_id: id, inter_order: inter });
+  toast('已标记发货');
+  loadPendingOrders();
+}
+
+async function loadShippedOrders() {
+  const body = document.getElementById('shipped-orders-body');
+  body.innerHTML = '<tr><td colspan="4" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffOrders', { status: 'shipped' });
+    if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="empty">暂无运输中订单</td></tr>'; return; }
+    body.innerHTML = list.map((o) => `
+      <tr>
+        <td>${escapeHtml(o.order_no)}</td>
+        <td>${escapeHtml(o.member_nickname || '')}<div class="muted">${escapeHtml(o.member_mobile || '')}</div></td>
+        <td>${escapeHtml(o.inter_order)}</td>
+        <td>
+          <div class="row-flex">
+            <input class="inline" id="track-${o.id}" placeholder="例：已到达上海分拣中心" style="width: 220px;" />
+            <button onclick="addTrack(${o.id})">追加</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="4" class="empty">加载失败</td></tr>'; }
+}
+
+async function addTrack(id) {
+  const input = document.getElementById(`track-${id}`);
+  const text = input.value.trim();
+  if (!text) { toast('请填写轨迹内容'); return; }
+  await call('System.Order.addTrack', { order_id: id, status_text: text });
+  toast('已追加轨迹');
+  input.value = '';
+}
+
+document.getElementById('staffKey').value = getKey();
+loadActivePanel();
+</script>
+</body>
+</html>

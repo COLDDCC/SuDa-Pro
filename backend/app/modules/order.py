@@ -137,6 +137,35 @@ def markInbound(db, member, params):
     return _pkg_dict(p)
 
 
+def staffPendingPackages(db, member, params):
+    """给后台管理页用：查所有会员的待入库/已入库包裹（客户端的 goodsList 只能看自己的）。"""
+    _require_staff(params)
+    rows = db.query(models.Package).filter(
+        models.Package.status.in_([models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND])
+    ).order_by(models.Package.id.desc()).all()
+    return [{
+        **_pkg_dict(p),
+        "member_id": p.member_id,
+        "member_nickname": p.member.nickname,
+        "member_mobile": p.member.mobile,
+    } for p in rows]
+
+
+def staffOrders(db, member, params):
+    """给后台管理页用：按状态查所有会员的订单（客户端的 order 只能看自己的）。"""
+    _require_staff(params)
+    status = params.get("status", "pending")
+    rows = db.query(models.Order).filter_by(status=status).order_by(models.Order.id.desc()).all()
+    from .member import _addr_dict
+    return [{
+        **_order_summary(o),
+        "member_nickname": o.member.nickname,
+        "member_mobile": o.member.mobile,
+        "address": _addr_dict(o.address),
+        "packages": [_pkg_dict(i.package) for i in o.items],
+    } for o in rows]
+
+
 # ---- 下单发货 ----
 
 def getLine(db, member, params):

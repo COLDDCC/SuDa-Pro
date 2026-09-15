@@ -37,14 +37,20 @@ export WX_SECRET=你的小程序secret
 export STAFF_KEY=随便设一个只有你和员工知道的字符串
 ```
 
-不设置这个变量时，这三个接口直接拒绝所有请求：
+不设置这个变量时，这几个接口直接拒绝所有请求：
 
 - `System.Order.markInbound`(goods_id, staff_key) — 标记包裹已入库
 - `System.Order.markShipped`(order_id, inter_order, staff_key) — 标记订单已发货，写入国际转运单号
 - `System.Order.addTrack`(order_id, status_text, location, staff_key) — 追加一条物流轨迹
+- `System.Order.staffPendingPackages`(staff_key) — 查所有会员的待入库/已入库包裹
+- `System.Order.staffOrders`(status, staff_key) — 按状态查所有会员的订单
 
-这几个接口目前没有对应的小程序页面（后台管理页是后续要做的事），先用 `curl`
-或接口调试工具手动调用。
+## 后台管理页
+
+上面这几个接口配了一个最简单的静态页面，不用手动拼 `curl`：启动后端后访问
+`http://127.0.0.1:8811/admin/`，页面顶部填入 `STAFF_KEY`（跟后端环境变量的值一致）保存，
+就能看"待入库包裹 / 待发货订单 / 运输中订单"三个 tab，直接点按钮标记入库、填国际转运单号
+标记发货、给运输中的订单追加物流轨迹。纯 HTML + fetch，没有构建步骤。
 
 ## 接口约定
 

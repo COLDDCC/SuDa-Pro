@@ -20,12 +20,29 @@ docs/plan.md   项目计划书 + 竞品接口清单
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+export STAFF_KEY=随便设一个字符串   # 仓库/客服操作用，见下面第 2 步
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8811
 ```
 
 详见 [`backend/README.md`](backend/README.md)。
 
-### 2. 打开小程序
+### 2. 不装微信开发者工具，先确认后端本身是通的
+
+另开一个终端跑一键冒烟测试，把"登录→建地址→预报→仓库入库→下单→仓库发货→
+追加物流轨迹→客户查详情"这条主线全走一遍，任何一步出错会直接报错退出：
+
+```bash
+cd backend
+STAFF_KEY=你在第1步设置的那个值 python3 scripts/smoke_test.py
+```
+
+看到最后一行 `[PASS] 全流程走通了` 就说明后端没问题。
+
+仓库/客服那几个操作（标记入库、标记发货、追加轨迹）现在也有一个网页可以点，不用背
+接口参数：浏览器打开 `http://127.0.0.1:8811/admin/`，填入 `STAFF_KEY` 保存，
+就能看到"待入库包裹 / 待发货订单 / 运输中订单"三个 tab 直接操作。
+
+### 3. 打开小程序
 
 用微信开发者工具「导入项目」选择 `miniprogram/` 目录（AppID 可选"测试号"）。
 `miniprogram/utils/config.js` 里的 `BASE_URL` 默认指向 `http://127.0.0.1:8811`，
@@ -35,11 +52,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8811
 - **微信一键登录**：需要后端配置了 `WX_APPID`/`WX_SECRET`（见 backend/README.md）
 - **本地联调登录**：不需要任何微信凭证，随便填个用户名即可，方便先把全流程跑通
 
-### 3. 走一遍 MVP 全流程
+### 4. 在小程序里走一遍 MVP 全流程
 
 登录 → 首页看日本仓地址和运费计算器 → 预报一个包裹 → 我的包裹里能看到 →
 去下单发货，选地址（没有就新增，身份证号必填，报关要用）→ 选线路提交 →
-订单列表/详情能看到物流轨迹。
+去 `http://127.0.0.1:8811/admin/` 把这个包裹标记入库、把这个订单标记发货 →
+回小程序订单详情，能看到物流轨迹和国际转运单号了。
 
 ## MVP 范围
 
