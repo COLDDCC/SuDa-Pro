@@ -1,5 +1,14 @@
 <view class="container">
   <view class="card">
+    <view class="section-title">自动识别单号（可选）</view>
+    <view class="muted" style="margin-bottom: 16rpx;">
+      拍下快递单照片，用手机自带的"提取图中文字"功能复制文字，粘贴到下面，帮你自动填单号
+    </view>
+    <textarea class="input" style="height: 120rpx;" placeholder="粘贴快递单上的文字…" value="{{pasteText}}" bindinput="onPasteTextInput" />
+    <button class="btn-outline" bindtap="onRecognize">自动识别单号</button>
+  </view>
+
+  <view class="card">
     <view class="section-title">包裹预报</view>
     <view class="muted" style="margin-bottom: 20rpx;">告诉我们有个包裹要寄到日本仓，方便我们核对入库</view>
 

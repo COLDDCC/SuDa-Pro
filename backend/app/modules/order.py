@@ -5,6 +5,7 @@ from decimal import Decimal, ROUND_UP
 from ..config import STAFF_KEY
 from ..errors import ApiError
 from .. import models
+from .. import tracking
 
 
 def _require_staff(params):
@@ -42,6 +43,20 @@ def _pkg_dict(p: models.Package):
         "status": p.status,
         "created_at": p.created_at.isoformat(),
         "inbound_at": p.inbound_at.isoformat() if p.inbound_at else None,
+    }
+
+
+def parseTrackingText(db, member, params):
+    """差异化功能：省一半输入。用户把快递单上的文字拍照后用手机自带的"提取文字"
+    功能复制粘贴过来（或者直接照抄），从里面猜一个快递单号出来，预报页拿去自动
+    填单号框，用户确认/改一下就行，不用整串手打。不接第三方 OCR 服务，纯正则，
+    所以没有额度限制、也不需要配任何 key。
+    """
+    text = params.get("text", "")
+    candidates = tracking.guess_tracking_numbers(text)
+    return {
+        "best_guess": candidates[0] if candidates else None,
+        "candidates": candidates,
     }
 
 

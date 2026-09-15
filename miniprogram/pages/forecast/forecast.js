@@ -10,11 +10,34 @@ Page({
       price: '',
       cc_registered_price: '',
     },
+    pasteText: '',
   },
 
   onFieldInput(e) {
     const { field } = e.currentTarget.dataset;
     this.setData({ [`form.${field}`]: e.detail.value });
+  },
+
+  onPasteTextInput(e) {
+    this.setData({ pasteText: e.detail.value });
+  },
+
+  // 差异化功能：把快递单上的文字拍照后用手机自带的"提取文字"功能复制粘贴过来，
+  // 自动识别单号，省得整串手打。识别不到就提示手动填，不影响正常流程。
+  onRecognize() {
+    const text = this.data.pasteText.trim();
+    if (!text) return wx.showToast({ title: '先粘贴快递单上的文字', icon: 'none' });
+
+    call('System.Order.parseTrackingText', { text })
+      .then((result) => {
+        if (!result.best_guess) {
+          wx.showToast({ title: '没识别到单号，请手动填写', icon: 'none' });
+          return;
+        }
+        this.setData({ 'form.express_num': result.best_guess });
+        wx.showToast({ title: '已自动填入，请核对', icon: 'none' });
+      })
+      .catch(() => {});
   },
 
   onSubmit() {

@@ -90,7 +90,10 @@
 ## 5. 我们能比它好在哪（差异化）
 
 1. **视觉**：认真做一套设计，别用生成图水印。
-2. **预报体验**：竞品预报要手填一堆字段。后续可加"拍快递单照片自动识别单号/品名"（OCR），省一半输入（本版 MVP 未做，留作二期）。
+2. **预报体验**：竞品预报要手填一堆字段。真正的拍照 OCR 需要接第三方视觉识别付费服务，
+   留作二期（等真有客户在用、值得花这个钱再接）。现在先实现了一个不需要任何第三方账号的
+   过渡版本：预报页可以把快递单上的文字（拍照后用手机自带的"提取图中文字"复制）粘贴进来，
+   `System.Order.parseTrackingText` 用正则自动识别出单号并回填，纯本地计算，没有额度限制。
 3. **运费透明**：首页直接放"重量 → 各线路报价"计算器（已实现：`System.Address.estimateFee` + 首页运费计算器卡片），竞品运费预估藏得深。
 4. **状态推送**：包裹到仓、发货、签收，主动发服务通知，不用用户反复查（二期接入微信服务通知）。
 5. **面向转运场景优化**：从头按"纯转运"设计，界面更干净，没有代购模板的冗余字段。
@@ -134,6 +137,7 @@
 - `noticeList`(shop_id) / `noticeInfo`(notice_id) — 公告
 
 ### 订单 System.Order
+- `parseTrackingText`(text) — 本仓库新增：从粘贴的文字里正则猜快递单号，差异化功能"预报体验"的过渡版
 - `addforecast`(good_name, count, netwt, price, bar_code, brand_name_cn, category, spec, cc_registered_price, export_unit_price, is_second_goods, shop_id) — **包裹预报（核心）**
 - `queryGoods`(bar_code) / `selectgoods`(good_name) — 查商品
 - `goodsList`(shop_id, status) / `getgoods`(goods_id) — 商品(包裹)列表
