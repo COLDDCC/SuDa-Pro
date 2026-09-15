@@ -149,6 +149,11 @@ def _validate_address(a: models.Address):
         raise ApiError("请填写详细地址")
     if not _IDNUMBER_RE.match(a.idnumber or ""):
         raise ApiError("身份证号格式不正确（报关需要实名）")
+    # province_name/city_name/district_name 是 _apply_address_fields 里
+    # _fill_region_names() 已经解析好的——传了不存在的 id（或者压根没传）都会
+    # 解析成空字符串，这里统一拦下来，不然会存出一个没法送货的地址。
+    if not (a.province_name and a.city_name and a.district_name):
+        raise ApiError("请选择省/市/区")
 
 
 def _clear_default(db, member_id):

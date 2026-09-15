@@ -16,6 +16,24 @@ def _require_staff(params):
         raise ApiError("无权限执行该操作", code=403)
 
 
+def _to_int(value, default, field_name):
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ApiError(f"{field_name}格式不正确")
+
+
+def _to_decimal(value, default, field_name):
+    if value in (None, ""):
+        return Decimal(default)
+    try:
+        return Decimal(str(value))
+    except Exception:
+        raise ApiError(f"{field_name}格式不正确")
+
+
 # ---- 预报 / 包裹(竞品叫"商品" goods，其实就是包裹里的物品) ----
 
 _FORECAST_FIELDS = [
@@ -74,15 +92,15 @@ def addforecast(db, member, params):
         shop_id=params.get("shop_id", 1),
         express_num=express_num,
         good_name=good_name,
-        count=int(params.get("count", 1) or 1),
-        netwt=Decimal(str(params.get("netwt", 0) or 0)),
-        price=Decimal(str(params.get("price", 0) or 0)),
+        count=_to_int(params.get("count"), 1, "数量"),
+        netwt=_to_decimal(params.get("netwt"), "0", "净重"),
+        price=_to_decimal(params.get("price"), "0", "商品价值"),
         bar_code=params.get("bar_code", ""),
         brand_name_cn=params.get("brand_name_cn", ""),
         category=params.get("category", ""),
         spec=params.get("spec", ""),
-        cc_registered_price=Decimal(str(params.get("cc_registered_price", 0) or 0)),
-        export_unit_price=Decimal(str(params.get("export_unit_price", 0) or 0)),
+        cc_registered_price=_to_decimal(params.get("cc_registered_price"), "0", "海关申报价值"),
+        export_unit_price=_to_decimal(params.get("export_unit_price"), "0", "出口单价"),
         is_second_goods=bool(params.get("is_second_goods", False)),
         status=models.Package.STATUS_PENDING,
     )
@@ -203,7 +221,7 @@ def savePage(db, member, params):
         raise ApiError("请选择收件地址")
     if not line_id:
         raise ApiError("请选择物流线路")
-    if not package_ids:
+    if not isinstance(package_ids, list) or not package_ids:
         raise ApiError("请至少选择一个包裹")
 
     address = db.query(models.Address).filter_by(id=address_id, member_id=member.id).first()
@@ -276,8 +294,8 @@ def order(db, member, params):
     keyword = params.get("keyword")
     if keyword:
         q = q.filter(models.Order.order_no.contains(keyword))
-    page = int(params.get("page", 1) or 1)
-    page_size = int(params.get("page_size", 10) or 10)
+    page = max(_to_int(params.get("page"), 1, "page"), 1)
+    page_size = min(max(_to_int(params.get("page_size"), 10, "page_size"), 1), 100)
     total = q.count()
     rows = q.order_by(models.Order.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "page": page, "list": [_order_summary(o) for o in rows]}
