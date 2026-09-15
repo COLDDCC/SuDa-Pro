@@ -141,6 +141,9 @@ def addressDelete(db, member, params):
     a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
     if not a:
         raise ApiError("地址不存在")
+    in_use = db.query(models.Order.id).filter_by(address_id=addr_id).first()
+    if in_use:
+        raise ApiError("该地址已被订单使用，无法删除")
     db.delete(a)
     db.commit()
     return {"ok": True}

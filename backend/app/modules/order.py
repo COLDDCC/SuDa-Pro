@@ -1,4 +1,5 @@
 """System.Order.* — 预报、包裹(货物)管理、下单、订单查询、物流轨迹"""
+import hmac
 from decimal import Decimal, ROUND_UP
 
 from ..config import STAFF_KEY
@@ -8,9 +9,9 @@ from .. import models
 
 def _require_staff(params):
     """仓库/客服操作的权限校验。MVP 阶段没有员工账号体系，先用共享密钥顶上，
-    比"任何登录用户都能操作别人的包裹/订单"要安全。"""
-    key = params.get("staff_key")
-    if not STAFF_KEY or key != STAFF_KEY:
+    比"任何登录用户都能操作别人的包裹/订单"要安全。用 compare_digest 避免时序攻击。"""
+    key = params.get("staff_key") or ""
+    if not STAFF_KEY or not hmac.compare_digest(key, STAFF_KEY):
         raise ApiError("无权限执行该操作", code=403)
 
 
