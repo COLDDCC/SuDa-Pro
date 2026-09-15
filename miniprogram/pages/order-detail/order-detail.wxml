@@ -1,0 +1,42 @@
+<view class="container" wx:if="{{order}}">
+  <view class="card row">
+    <view class="muted">{{order.order_no}}</view>
+    <view class="tag {{order.statusInfo.cls}}">{{order.statusInfo.text}}</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">收件信息</view>
+    <view>{{order.address.consigner}} {{order.address.mobile}}</view>
+    <view class="muted">{{order.address.province}}{{order.address.city}}{{order.address.district}}{{order.address.address}}</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">包裹清单（{{order.packages.length}}件）</view>
+    <view wx:for="{{order.packages}}" wx:key="id" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;">
+      <view class="row">
+        <view>{{item.good_name}}</view>
+        <view class="tag {{item.statusInfo.cls}}">{{item.statusInfo.text}}</view>
+      </view>
+      <view class="muted">净重 {{item.netwt}}kg</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">费用</view>
+    <view class="row">
+      <view class="muted">线路：{{order.line_name}}</view>
+      <view style="color: #2b6cff; font-weight: 700;">¥{{order.total_fee}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">物流轨迹</view>
+    <view wx:if="{{!order.tracks.length}}" class="muted">暂无轨迹信息</view>
+    <view wx:for="{{order.tracks}}" wx:key="index" style="padding: 12rpx 0; border-left: 2rpx solid #e0e0e0; padding-left: 20rpx; margin-left: 6rpx;">
+      <view>{{item.status_text}}</view>
+      <view class="muted">{{item.time}} {{item.location}}</view>
+    </view>
+  </view>
+
+  <button wx:if="{{order.status === 'pending'}}" class="btn-outline" bindtap="onCloseOrder">关闭订单</button>
+</view>

@@ -1,0 +1,21 @@
+<view class="container">
+  <view wx:if="{{!list.length}}" class="empty">还没有收件地址</view>
+
+  <view class="card" wx:for="{{list}}" wx:key="id" data-id="{{item.id}}" bindtap="onSelect">
+    <view class="row">
+      <view style="font-weight: 600;">{{item.consigner}} {{item.mobile}}</view>
+      <view class="tag tag-inbound" wx:if="{{item.is_default}}">默认</view>
+    </view>
+    <view class="muted" style="margin-top: 8rpx;">{{item.province}}{{item.city}}{{item.district}}{{item.address}}</view>
+    <view class="row" style="margin-top: 16rpx;">
+      <view></view>
+      <view>
+        <button size="mini" class="btn-outline" data-id="{{item.id}}" catchtap="onSetDefault" wx:if="{{!item.is_default}}">设为默认</button>
+        <button size="mini" class="btn-outline" data-id="{{item.id}}" catchtap="onEdit">编辑</button>
+        <button size="mini" class="btn-outline" data-id="{{item.id}}" catchtap="onDelete">删除</button>
+      </view>
+    </view>
+  </view>
+
+  <button class="btn-primary" bindtap="goAdd">+ 新增收件地址</button>
+</view>

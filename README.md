@@ -1,0 +1,56 @@
+# XX转运Pro
+
+日本转运小程序 MVP：用户把包裹寄到我们的日本仓地址，在小程序里预报包裹、下单发货、跟踪物流。
+
+详细背景、竞品解包出的完整接口清单、差异化设计见 [`docs/plan.md`](docs/plan.md)。
+
+## 目录结构
+
+```
+backend/       FastAPI + SQLite 后端，方法名路由 (POST /api {method, params, token})
+miniprogram/   微信小程序原生前端，10 个页面覆盖 MVP 全流程
+docs/plan.md   项目计划书 + 竞品接口清单
+```
+
+## 快速开始
+
+### 1. 启动后端
+
+```bash
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8811
+```
+
+详见 [`backend/README.md`](backend/README.md)。
+
+### 2. 打开小程序
+
+用微信开发者工具「导入项目」选择 `miniprogram/` 目录（AppID 可选"测试号"）。
+`miniprogram/utils/config.js` 里的 `BASE_URL` 默认指向 `http://127.0.0.1:8811`，
+本地联调记得在开发者工具里关闭"域名校验"（详情 -> 本地设置 -> 不校验合法域名）。
+
+登录页提供了两种方式：
+- **微信一键登录**：需要后端配置了 `WX_APPID`/`WX_SECRET`（见 backend/README.md）
+- **本地联调登录**：不需要任何微信凭证，随便填个用户名即可，方便先把全流程跑通
+
+### 3. 走一遍 MVP 全流程
+
+登录 → 首页看日本仓地址和运费计算器 → 预报一个包裹 → 我的包裹里能看到 →
+去下单发货，选地址（没有就新增，身份证号必填，报关要用）→ 选线路提交 →
+订单列表/详情能看到物流轨迹。
+
+## MVP 范围
+
+已实现：微信登录（+ 本地联调登录）、会员信息、收件地址（含全国省市区三级联动、实名信息）、
+日本仓地址、包裹预报、我的包裹、运费计算器（差异化功能）、下单发货、订单列表/详情、物流轨迹、公告。
+
+按计划书第 2 节先砍掉：余额充值/提现、拼团砍价、多店铺切换、会员等级体系、短信验证码
+（`System.Config.getVertification` 占位待接入第三方短信网关）。
+
+## 关于竞品 .wxapkg
+
+竞品小程序包是加密的（`V1MMWX` 头，微信开发者工具的标准加密格式），解密需要该小程序的
+`wxid` 作为密钥材料，这次没有再重复解包。不过 `docs/plan.md` 第 7 节的接口清单就是此前
+已完成的解包结果整理，本仓库后端就是照着这份清单实现的。

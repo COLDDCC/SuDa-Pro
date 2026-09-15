@@ -1,0 +1,34 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/login/login",
+    "pages/forecast/forecast",
+    "pages/packages/packages",
+    "pages/order-create/order-create",
+    "pages/orders/orders",
+    "pages/order-detail/order-detail",
+    "pages/address-list/address-list",
+    "pages/address-edit/address-edit",
+    "pages/mine/mine"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#2b6cff",
+    "navigationBarTitleText": "XX转运Pro",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f5f6fa"
+  },
+  "tabBar": {
+    "color": "#8a8f9c",
+    "selectedColor": "#2b6cff",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "首页" },
+      { "pagePath": "pages/packages/packages", "text": "我的包裹" },
+      { "pagePath": "pages/orders/orders", "text": "订单" },
+      { "pagePath": "pages/mine/mine", "text": "我的" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

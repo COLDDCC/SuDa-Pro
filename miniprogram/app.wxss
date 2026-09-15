@@ -1,0 +1,83 @@
+page {
+  background: #f5f6fa;
+  color: #1f2330;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.container {
+  padding: 24rpx;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(20, 30, 60, 0.05);
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  margin-bottom: 16rpx;
+  color: #1f2330;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.muted {
+  color: #8a8f9c;
+  font-size: 24rpx;
+}
+
+.btn-primary {
+  background: #2b6cff;
+  color: #fff;
+  border-radius: 44rpx;
+  font-size: 30rpx;
+  line-height: 88rpx;
+  height: 88rpx;
+}
+
+.btn-outline {
+  background: #fff;
+  color: #2b6cff;
+  border: 2rpx solid #2b6cff;
+  border-radius: 44rpx;
+  font-size: 28rpx;
+  line-height: 72rpx;
+  height: 72rpx;
+}
+
+.input {
+  background: #f5f6fa;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 20rpx;
+  font-size: 28rpx;
+}
+
+.tag {
+  display: inline-block;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 22rpx;
+}
+
+.tag-pending { background: #fff4e5; color: #d97706; }
+.tag-inbound { background: #e6f4ff; color: #1677ff; }
+.tag-ordered { background: #eef2ff; color: #4f46e5; }
+.tag-shipped { background: #e7f8ee; color: #12a150; }
+.tag-cancelled, .tag-closed { background: #f2f2f2; color: #999; }
+
+.empty {
+  text-align: center;
+  color: #b0b4bf;
+  padding: 120rpx 0;
+  font-size: 26rpx;
+}

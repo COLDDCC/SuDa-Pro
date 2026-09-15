@@ -1,0 +1,14 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/modules/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Database
+backend/*.db
+backend/*.db-journal
+
+# Misc
+.DS_Store

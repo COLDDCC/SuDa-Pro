@@ -1,0 +1,28 @@
+<view class="container" wx:if="{{member}}">
+  <view class="card row">
+    <view>
+      <view style="font-size: 32rpx; font-weight: 600;">{{member.nickname || '未设置昵称'}}</view>
+      <view class="muted">{{member.mobile || '未绑定手机号'}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="row" style="padding: 8rpx 0;">
+      <view class="muted">清关码</view>
+      <view>{{member.cn_code}}</view>
+    </view>
+    <view class="row" style="padding: 8rpx 0;">
+      <view class="muted">账户余额</view>
+      <view>¥{{member.balance}}</view>
+    </view>
+  </view>
+
+  <view class="card" bindtap="goAddressList">
+    <view class="row">
+      <view>收件地址管理</view>
+      <view class="muted">›</view>
+    </view>
+  </view>
+
+  <button class="btn-outline" bindtap="onLogout">退出登录</button>
+</view>

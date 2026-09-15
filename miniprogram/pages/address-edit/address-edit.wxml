@@ -1,0 +1,26 @@
+<view class="container">
+  <view class="card">
+    <input class="input" placeholder="收件人姓名 *" data-field="consigner" value="{{consigner}}" bindinput="onFieldInput" />
+    <input class="input" placeholder="手机号 *" type="number" data-field="mobile" value="{{mobile}}" bindinput="onFieldInput" />
+
+    <picker mode="multiSelector" range="{{[provinces, cities, districts]}}" range-key="name"
+      value="{{multiIndex}}" bindchange="onPickerChange" bindcolumnchange="onColumnChange">
+      <view class="input row">
+        <view>{{regionText}}</view>
+        <view class="muted">点击选择</view>
+      </view>
+    </picker>
+
+    <input class="input" placeholder="详细地址 *" data-field="address" value="{{address}}" bindinput="onFieldInput" />
+    <input class="input" placeholder="身份证号 *（用于清关实名）" data-field="idnumber" value="{{idnumber}}" bindinput="onFieldInput" />
+
+    <checkbox-group bindchange="onDefaultChange">
+      <label class="row">
+        <view>设为默认收件地址</view>
+        <checkbox checked="{{is_default}}" />
+      </label>
+    </checkbox-group>
+  </view>
+
+  <button class="btn-primary" bindtap="onSubmit">保存</button>
+</view>

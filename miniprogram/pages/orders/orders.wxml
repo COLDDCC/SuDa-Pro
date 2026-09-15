@@ -1,0 +1,21 @@
+<view class="container">
+  <scroll-view scroll-x class="tabs">
+    <view wx:for="{{tabs}}" wx:key="key"
+      class="tab-item {{activeTab === item.key ? 'tab-active' : ''}}"
+      data-key="{{item.key}}" bindtap="onTabTap">{{item.label}}</view>
+  </scroll-view>
+
+  <view wx:if="{{!list.length}}" class="empty">还没有订单</view>
+
+  <view class="card" wx:for="{{list}}" wx:key="id" data-id="{{item.id}}" bindtap="goDetail">
+    <view class="row">
+      <view class="muted">{{item.order_no}}</view>
+      <view class="tag {{item.statusInfo.cls}}">{{item.statusInfo.text}}</view>
+    </view>
+    <view style="margin-top: 8rpx;">{{item.line_name}} · {{item.item_count}}件包裹</view>
+    <view class="row" style="margin-top: 8rpx;">
+      <view class="muted">{{item.total_weight}}kg</view>
+      <view style="color: #2b6cff; font-weight: 600;">¥{{item.total_fee}}</view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,15 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">包裹预报</view>
+    <view class="muted" style="margin-bottom: 20rpx;">告诉我们有个包裹要寄到日本仓，方便我们核对入库</view>
+
+    <input class="input" placeholder="日本国内快递单号 *" data-field="express_num" value="{{form.express_num}}" bindinput="onFieldInput" />
+    <input class="input" placeholder="商品名称 *" data-field="good_name" value="{{form.good_name}}" bindinput="onFieldInput" />
+    <input class="input" type="number" placeholder="数量" data-field="count" value="{{form.count}}" bindinput="onFieldInput" />
+    <input class="input" type="digit" placeholder="净重(kg)" data-field="netwt" value="{{form.netwt}}" bindinput="onFieldInput" />
+    <input class="input" type="digit" placeholder="商品价值(元)" data-field="price" value="{{form.price}}" bindinput="onFieldInput" />
+    <input class="input" type="digit" placeholder="海关申报价值(元，留空同商品价值)" data-field="cc_registered_price" value="{{form.cc_registered_price}}" bindinput="onFieldInput" />
+
+    <button class="btn-primary" bindtap="onSubmit">提交预报</button>
+  </view>
+</view>

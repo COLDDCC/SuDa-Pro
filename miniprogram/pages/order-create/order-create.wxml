@@ -1,0 +1,45 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">收件地址</view>
+    <view wx:if="{{address}}" bindtap="goChooseAddress">
+      <view>{{address.consigner}} {{address.mobile}}</view>
+      <view class="muted">{{address.province}}{{address.city}}{{address.district}}{{address.address}}</view>
+    </view>
+    <button wx:else class="btn-outline" bindtap="goChooseAddress">选择/添加收件地址</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">选择包裹</view>
+    <view wx:if="{{!packages.length}}" class="muted">没有可下单的包裹，请先预报</view>
+    <view wx:for="{{packages}}" wx:key="id" class="row" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;"
+      data-id="{{item.id}}" bindtap="onTogglePackage">
+      <checkbox checked="{{selectedIds.indexOf(item.id) > -1}}" />
+      <view style="flex: 1; margin-left: 12rpx;">
+        <view>{{item.good_name}}</view>
+        <view class="muted">净重 {{item.netwt}}kg · ¥{{item.price}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">物流线路</view>
+    <picker range="{{lines}}" range-key="name" bindchange="onLineChange">
+      <view class="input row">
+        <view>{{selectedLineName}}</view>
+        <view class="muted">点击切换</view>
+      </view>
+    </picker>
+  </view>
+
+  <view class="card">
+    <view class="section-title">备注</view>
+    <input class="input" placeholder="给客服的备注（选填）" value="{{remark}}" bindinput="onRemarkInput" />
+  </view>
+
+  <view class="card row">
+    <view>预估重量 {{totalWeight}}kg</view>
+    <view style="color: #2b6cff; font-weight: 700; font-size: 32rpx;">¥{{totalFee}}</view>
+  </view>
+
+  <button class="btn-primary" bindtap="onSubmit">提交订单</button>
+</view>

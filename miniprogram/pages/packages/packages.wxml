@@ -1,0 +1,27 @@
+<view class="container">
+  <scroll-view scroll-x class="tabs">
+    <view wx:for="{{tabs}}" wx:key="key"
+      class="tab-item {{activeTab === item.key ? 'tab-active' : ''}}"
+      data-key="{{item.key}}" bindtap="onTabTap">{{item.label}}</view>
+  </scroll-view>
+
+  <view wx:if="{{!list.length}}" class="empty">还没有包裹，去预报一个吧</view>
+
+  <view class="card" wx:for="{{list}}" wx:key="id">
+    <view class="row">
+      <view style="font-weight: 600;">{{item.good_name}}</view>
+      <view class="tag {{item.statusInfo.cls}}">{{item.statusInfo.text}}</view>
+    </view>
+    <view class="muted" style="margin-top: 8rpx;">单号：{{item.express_num}}</view>
+    <view class="muted">数量 {{item.count}} · 净重 {{item.netwt}}kg · 价值 ¥{{item.price}}</view>
+    <view class="row" style="margin-top: 16rpx;" wx:if="{{item.status === 'pending' || item.status === 'inbound'}}">
+      <view></view>
+      <button size="mini" class="btn-outline" data-id="{{item.id}}" bindtap="onDelete">删除</button>
+    </view>
+  </view>
+
+  <view class="fab-group">
+    <button class="btn-outline" bindtap="goForecast">+ 预报</button>
+    <button class="btn-primary" bindtap="goCreateOrder">去下单</button>
+  </view>
+</view>
