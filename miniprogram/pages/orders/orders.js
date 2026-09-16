@@ -9,34 +9,57 @@ const TABS = [
   { key: 'closed', label: '已关闭' },
 ];
 
+const PAGE_SIZE = 10;
+
 Page({
   data: {
     tabs: TABS,
     activeTab: '',
     list: [],
+    page: 1,
+    hasMore: true,
+    loadingMore: false,
   },
 
   onShow() {
     if (!getApp().ensureLogin()) return;
-    this.loadList();
+    this.loadList({ reset: true });
   },
 
   onPullDownRefresh() {
-    this.loadList(() => wx.stopPullDownRefresh());
+    this.loadList({ reset: true, done: () => wx.stopPullDownRefresh() });
   },
 
-  loadList(done) {
-    call('System.Order.order', this.data.activeTab ? { status: this.data.activeTab } : {})
+  // 订单可能不止一页，上拉到底自动翻页加载，不然超过第一页的订单永远看不到
+  onReachBottom() {
+    if (!this.data.hasMore || this.data.loadingMore) return;
+    this.loadList({ reset: false });
+  },
+
+  loadList({ reset, done } = {}) {
+    const page = reset ? 1 : this.data.page;
+    this.setData({ loadingMore: true });
+    const params = { page, page_size: PAGE_SIZE };
+    if (this.data.activeTab) params.status = this.data.activeTab;
+
+    call('System.Order.order', params)
       .then((res) => {
+        const newRows = res.list.map((o) => ({ ...o, statusInfo: orderStatus(o.status) }));
+        const list = reset ? newRows : this.data.list.concat(newRows);
         this.setData({
-          list: res.list.map((o) => ({ ...o, statusInfo: orderStatus(o.status) })),
+          list,
+          page: page + 1,
+          hasMore: list.length < res.total,
         });
       })
-      .finally(() => done && done());
+      .finally(() => {
+        this.setData({ loadingMore: false });
+        done && done();
+      });
   },
 
   onTabTap(e) {
-    this.setData({ activeTab: e.currentTarget.dataset.key }, () => this.loadList());
+    this.setData({ activeTab: e.currentTarget.dataset.key }, () => this.loadList({ reset: true }));
   },
 
   goDetail(e) {

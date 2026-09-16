@@ -18,4 +18,7 @@
       <view style="color: #2b6cff; font-weight: 600;">¥{{item.total_fee}}</view>
     </view>
   </view>
+
+  <view wx:if="{{list.length && !hasMore}}" class="muted" style="text-align: center; padding: 24rpx 0;">没有更多了</view>
+  <view wx:if="{{loadingMore && list.length}}" class="muted" style="text-align: center; padding: 24rpx 0;">加载中...</view>
 </view>
