@@ -43,9 +43,20 @@ def health():
 
 @app.post("/api")
 async def api_entry(request: Request, db: Session = Depends(get_db)):
-    body = await request.json()
-    method = body.get("method", "")
-    params = body.get("params", {}) or {}
+    try:
+        body = await request.json()
+    except Exception:
+        return {"code": 400, "msg": "请求体不是合法的 JSON", "data": None}
+    if not isinstance(body, dict):
+        return {"code": 400, "msg": "请求体格式不正确", "data": None}
+
+    # 用 `or` 兜底而不是 dict.get 的默认值参数：请求体里显式传 "method": null
+    # 这种情况，get(key, default) 是不会用上 default 的（key 本身存在），
+    # 之前这里裸调 body.get("method", "") 就被这种输入直接崩过。
+    method = body.get("method") or ""
+    params = body.get("params") or {}
+    if not isinstance(params, dict):
+        return {"code": 400, "msg": "params 必须是一个对象", "data": None}
     token = body.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
 
     try:
