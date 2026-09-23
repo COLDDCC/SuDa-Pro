@@ -81,3 +81,104 @@ page {
   padding: 120rpx 0;
   font-size: 26rpx;
 }
+
+/* 表单里的开关行：左边文案右边开关，用于"到仓后帮我拍照"这类可选增值服务 */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-top: 2rpx solid #f0f1f5;
+}
+
+.switch-text {
+  flex: 1;
+  padding-right: 20rpx;
+}
+
+.switch-label {
+  font-size: 28rpx;
+  margin-bottom: 6rpx;
+}
+
+/* 输入框下面那行小字说明，比 .muted 更贴近上一个元素 */
+.hint {
+  color: #8a8f9c;
+  font-size: 22rpx;
+  margin: -12rpx 0 20rpx;
+  line-height: 1.5;
+}
+
+/* 费用明细：每一条"名称 —— 金额"，外加算法说明 */
+.fee-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14rpx 0;
+}
+
+.fee-name {
+  flex: 1;
+  padding-right: 20rpx;
+}
+
+.fee-detail {
+  color: #8a8f9c;
+  font-size: 22rpx;
+  margin-top: 4rpx;
+}
+
+.fee-amount {
+  font-size: 28rpx;
+  white-space: nowrap;
+}
+
+.fee-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 20rpx;
+  margin-top: 8rpx;
+  border-top: 2rpx solid #f0f1f5;
+  font-weight: 600;
+}
+
+.fee-total-amount {
+  color: #e8453c;
+  font-size: 34rpx;
+}
+
+/* 包裹照片缩略图 */
+.photo-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.photo-thumb {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 10rpx;
+  background: #f0f1f5;
+}
+
+/* 实际称重 vs 预报重量的对比行 */
+.weight-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+  margin-top: 8rpx;
+}
+
+.weight-actual {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2330;
+}
+
+.weight-declared {
+  color: #8a8f9c;
+  font-size: 22rpx;
+  text-decoration: line-through;
+}

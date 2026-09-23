@@ -1,0 +1,38 @@
+# 一台服务器 + 一个域名，两个容器就够了：
+#   api   —— FastAPI 后端，只监听内网，不直接对外
+#   caddy —— 反向代理，自动申请并续期 HTTPS 证书（小程序强制要求 HTTPS）
+#
+# 用法见 ../docs/deploy.md
+services:
+  api:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: sqlite:////data/suda.db
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - api-data:/data
+    expose:
+      - "8811"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  api-data:      # SQLite 数据库 + 包裹照片，别删，删了订单和留底照片一起没
+  caddy-data:    # HTTPS 证书
+  caddy-config:

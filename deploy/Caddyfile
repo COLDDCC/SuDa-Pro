@@ -1,0 +1,15 @@
+# Caddy 会自己去 Let's Encrypt 申请证书并自动续期，不用手动折腾 certbot。
+# DOMAIN 和 ADMIN_ALLOWED_IPS 从 .env 读。
+{$DOMAIN} {
+	encode gzip
+
+	# 仓库后台是用共享密钥的简易页面，再叠一层来源 IP 白名单：
+	# 只有 ADMIN_ALLOWED_IPS 里的地址能打开 /admin。
+	@admin_from_elsewhere {
+		path /admin*
+		not remote_ip {$ADMIN_ALLOWED_IPS}
+	}
+	respond @admin_from_elsewhere 403
+
+	reverse_proxy api:8811
+}

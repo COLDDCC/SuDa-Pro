@@ -5,6 +5,30 @@ from ..errors import ApiError
 from .. import models, regions
 
 
+# 运费计算器的重量上限。不设的话 "1e400"、400 位数字这类输入会一路漏到
+# 乘法和 quantize 里炸成 500，用户只看到"服务器内部错误"。
+MAX_WEIGHT = Decimal("10000")
+
+
+def _to_decimal(value):
+    """转不了就返回 None，交给调用方报错——不能让 Decimal() 直接炸成 500。
+
+    NaN 和 Infinity 要单独挡：Decimal("NaN") 是**合法**的不会抛异常，
+    但它和任何数比较都是 False，一路漏到下游才炸。
+    """
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, str, float)):
+        return None
+    try:
+        d = Decimal(str(value))
+    except Exception:
+        return None
+    if not d.is_finite() or abs(d) > MAX_WEIGHT:
+        return None
+    return d
+
+
 def province(db, member, params):
     return regions.list_provinces()
 
@@ -24,12 +48,21 @@ def district(db, member, params):
 
 
 def _line_dict(l: models.Line):
+    """线路的完整描述。前端要能自己把价格规则讲清楚，所以首重/续重都给出去。"""
     return {
         "id": l.id,
         "name": l.name,
         "description": l.description,
-        "price_per_kg": str(l.price_per_kg),
-        "min_weight": str(l.min_weight),
+        "first_weight": str(l.first_weight),
+        "first_fee": str(l.first_fee),
+        "step_weight": str(l.step_weight),
+        "step_fee": str(l.step_fee),
+        "price_text": (f"首重 {models._trim(l.first_weight)}kg ¥{models._trim(l.first_fee)}，"
+                       f"续重 ¥{models._trim(l.step_fee)}/{models._trim(l.step_weight)}kg"),
+        "min_declared_value": str(l.min_declared_value or 0),
+        "max_declared_value": (
+            None if l.max_declared_value is None else str(l.max_declared_value)),
+        "value_range": l.value_range_text(),
         "days_min": l.days_min,
         "days_max": l.days_max,
     }
@@ -50,26 +83,28 @@ def lineInfo(db, member, params):
 
 
 def estimateFee(db, member, params):
-    """差异化功能：运费计算器。按重量(kg)算出各条线路的预估费用，首页直接展示。
+    """差异化功能：运费计算器。按重量算出各条线路的预估费用，首页直接展示。
     params: {weight}
     """
-    try:
-        weight = Decimal(str(params.get("weight", 0)))
-    except Exception:
-        raise ApiError("重量格式不正确")
+    weight = _to_decimal(params.get("weight"))
+    if weight is None:
+        raise ApiError(f"重量格式不正确（请填 0 到 {MAX_WEIGHT}kg 之间的数字）")
     if weight <= 0:
         raise ApiError("请输入有效的重量")
 
     lines = db.query(models.Line).filter_by(is_active=True).all()
     result = []
     for l in lines:
-        billable = max(weight, l.min_weight)
-        fee = (billable * l.price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_UP)
         result.append({
             "line_id": l.id,
             "name": l.name,
-            "billable_weight": str(billable),
-            "fee": str(fee),
+            "description": l.description,
+            "fee": str(l.quote(weight)),
+            "fee_detail": l.quote_detail(weight),
+            "value_range": l.value_range_text(),
+            "min_declared_value": str(l.min_declared_value or 0),
+            "max_declared_value": (
+                None if l.max_declared_value is None else str(l.max_declared_value)),
             "days_min": l.days_min,
             "days_max": l.days_max,
         })

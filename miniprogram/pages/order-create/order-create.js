@@ -11,6 +11,15 @@ Page({
     remark: '',
     totalWeight: '0',
     totalFee: '0',
+    fees: [],
+    selectedLine: null,
+    declaredValue: '0',
+  },
+
+  onLoad(query) {
+    // 从首页计算器跳过来时会带上用户刚选中的线路，这里记下来，
+    // loadLines 拿到数据后用它做默认选中。
+    this.presetLineId = query.line_id ? Number(query.line_id) : null;
   },
 
   onShow() {
@@ -21,9 +30,15 @@ Page({
   },
 
   loadPackages() {
-    call('System.Order.goodsList', {}).then((list) => {
-      const eligible = list.filter((p) => p.status === 'pending' || p.status === 'inbound');
-      this.setData({ packages: eligible });
+    // 只有已入库的包裹能下单：还没到仓的东西既没称重也没法合箱打包，
+    // 放进来只会让用户选了半天再被后端打回来。
+    call('System.Order.goodsList', { status: 'inbound' }).then((list) => {
+      this.setData({
+        packages: list.map((p) => ({
+          ...p,
+          photoCharged: (p.photos || []).some((ph) => ph.kind === 'inbound'),
+        })),
+      });
     });
   },
 
@@ -31,7 +46,10 @@ Page({
     call('System.Order.getLine', {}).then((lines) => {
       this.setData({ lines });
       if (lines.length) {
-        this.setData({ lineId: lines[0].id, selectedLineName: lines[0].name }, () => this.recalc());
+        const preset = lines.find((l) => l.id === this.presetLineId) || lines[0];
+        this.setData({
+          lineId: preset.id, selectedLineName: preset.name, selectedLine: preset,
+        }, () => this.recalc());
       }
     });
   },
@@ -48,31 +66,45 @@ Page({
     } else {
       selected.push(id);
     }
-    this.setData({ selectedIds: selected }, () => this.recalc());
+    this.setData({ selectedIds: selected }, () => {
+      this.refreshDeclaredValue();
+      this.recalc();
+    });
   },
 
   onLineChange(e) {
     const line = this.data.lines[e.detail.value];
-    this.setData({ lineId: line.id, selectedLineName: line.name }, () => this.recalc());
+    this.setData({
+      lineId: line.id, selectedLineName: line.name, selectedLine: line,
+    }, () => this.recalc());
   },
 
-  // 重量只是本地求和，展示用的运费一律问后端要（System.Address.estimateFee），
-  // 不在前端重新实现一遍四舍五入逻辑，避免和后端算出来的最终金额不一致。
-  recalc() {
-    const selectedPkgs = this.data.packages.filter((p) => this.data.selectedIds.includes(p.id));
-    const weight = selectedPkgs.reduce((sum, p) => sum + Number(p.netwt), 0);
-    this.setData({ totalWeight: weight.toFixed(2) });
+  // 申报价值决定能走哪条线，选包裹时就把这个数亮出来，省得提交后才被打回。
+  // 后端有权威校验，这里只是提前提示。
+  refreshDeclaredValue() {
+    const total = this.data.packages
+      .filter((p) => this.data.selectedIds.includes(p.id))
+      .reduce((sum, p) => sum + (Number(p.cc_registered_price) || Number(p.price) || 0), 0);
+    this.setData({ declaredValue: total.toFixed(2) });
+  },
 
-    if (!this.data.lineId || weight <= 0) {
-      this.setData({ totalFee: '0' });
+  // 费用一律问后端要（System.Order.previewFee），前端一个数都不自己算。
+  // 这个接口和真正下单时用的是同一个函数，所以这里显示多少，提交后就扣多少。
+  recalc() {
+    if (!this.data.lineId || !this.data.selectedIds.length) {
+      this.setData({ totalWeight: '0', totalFee: '0', fees: [] });
       return;
     }
-    call('System.Address.estimateFee', { weight })
-      .then((result) => {
-        const matched = result.find((r) => r.line_id === this.data.lineId);
-        this.setData({ totalFee: matched ? matched.fee : '0' });
-      })
-      .catch(() => {});
+    call('System.Order.previewFee', {
+      line_id: this.data.lineId,
+      package_ids: this.data.selectedIds,
+    })
+      .then((preview) => this.setData({
+        totalWeight: preview.total_weight,
+        totalFee: preview.total_fee,
+        fees: preview.fees,
+      }))
+      .catch(() => this.setData({ totalFee: '0', fees: [] }));
   },
 
   onRemarkInput(e) {

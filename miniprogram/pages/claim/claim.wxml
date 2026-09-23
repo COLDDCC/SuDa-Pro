@@ -1,0 +1,41 @@
+<view class="container">
+  <view class="card">
+    <view class="section-title">认领包裹</view>
+    <view class="muted" style="margin-bottom: 20rpx;">
+      如果你往日本仓寄了东西但忘了预报，或者快递单上没写会员代码，包裹会先放在下面的
+      「待认领」里。填写完整的快递单号即可认领，认领后直接进入你的包裹列表。
+    </view>
+    <input class="input" placeholder="完整的日本快递单号" value="{{expressNum}}" bindinput="onExpressInput" />
+    <button class="btn-primary" bindtap="onClaim">认领</button>
+  </view>
+
+  <view class="card">
+    <view class="section-title">仓库里待认领的包裹（{{list.length}}）</view>
+    <view wx:if="{{loading}}" class="muted">加载中…</view>
+    <view wx:elif="{{!list.length}}" class="muted">
+      现在没有待认领的包裹。如果你确定包裹已经到仓但这里没有，请联系客服。
+    </view>
+
+    <view wx:for="{{list}}" wx:key="id" style="padding: 16rpx 0; border-top: 1rpx solid #f0f0f0;">
+      <view class="row">
+        <view>
+          <view>单号尾号 <text style="font-weight: 600;">{{item.express_tail}}</text></view>
+          <view class="muted" wx:if="{{item.good_name}}">{{item.good_name}}</view>
+          <view class="muted" wx:if="{{item.actual_weight}}">仓库实测 {{item.actual_weight}}kg</view>
+          <view class="muted" wx:if="{{item.note}}">{{item.note}}</view>
+        </view>
+        <image wx:if="{{item.photoFull}}" class="photo-thumb" src="{{item.photoFull}}" mode="aspectFill"
+          data-url="{{item.photoFull}}" bindtap="onPreviewPhoto" />
+      </view>
+      <button size="mini" class="btn-outline" style="margin-top: 12rpx;"
+        data-tail="{{item.express_tail}}" bindtap="onPickHint">这是我的</button>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="muted">
+      出于安全考虑，这里只显示单号后四位。认领需要填写完整单号，
+      避免别人照着列表认走你的包裹。实在想不起完整单号，请联系客服核对。
+    </view>
+  </view>
+</view>

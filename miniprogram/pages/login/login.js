@@ -3,6 +3,24 @@ const { call } = require('../../utils/request.js');
 Page({
   data: {
     devIdentifier: '',
+    // 配齐微信凭证后 devLogin 会被后端禁用，留着按钮用户点了只会看到一条
+    // 看不懂的报错，所以先问后端能不能用微信登录，再决定显示哪个。
+    wechatLogin: true,
+    ready: false,
+    siteName: '',
+    siteSlogan: '',
+  },
+
+  onLoad() {
+    // 品牌名也从后端取：改名字只要改 business.py，不用重发小程序。
+    call('System.Config.webSite')
+      .then((site) => this.setData({
+        wechatLogin: !!site.wechat_login,
+        siteName: site.name,
+        siteSlogan: site.slogan,
+        ready: true,
+      }))
+      .catch(() => this.setData({ ready: true }));
   },
 
   onWechatLogin() {

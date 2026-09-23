@@ -2,7 +2,12 @@
   <view class="card" wx:if="{{warehouse}}">
     <view class="section-title">我的日本仓地址</view>
     <view style="line-height: 1.6;">{{warehouse.address}}</view>
-    <view class="muted" style="margin-top: 8rpx;">会员代码：{{warehouse.member_code}}（收货务必备注）</view>
+    <view style="margin-top: 12rpx;">
+      会员代码：<text style="font-weight: 600; font-size: 32rpx;">{{warehouse.member_code}}</text>
+    </view>
+    <view class="hint" style="margin: 6rpx 0 0;">
+      寄件时务必把会员代码写在快递单上，否则仓库认不出是谁的包裹
+    </view>
     <view class="muted">{{warehouse.note}}</view>
     <button class="btn-outline" style="margin-top: 20rpx;" bindtap="onCopyAddress">复制收货地址</button>
   </view>
@@ -19,10 +24,31 @@
         value="{{weightInput}}" bindinput="onWeightInput" />
       <button class="btn-outline" bindtap="onEstimateFee">计算</button>
     </view>
-    <view wx:for="{{feeResult}}" wx:key="line_id" class="row" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;">
-      <view>{{item.name}}</view>
-      <view class="muted">{{item.days_min}}-{{item.days_max}}天</view>
-      <view style="color: #2b6cff; font-weight: 600;">¥{{item.fee}}</view>
+    <view wx:for="{{feeResult}}" wx:key="line_id" style="padding: 16rpx 0; border-top: 1rpx solid #f0f0f0;">
+      <view class="row">
+        <view style="font-weight: 600;">
+          {{item.name}}<text wx:if="{{item.cheapest}}" class="tag tag-shipped" style="margin-left: 12rpx;">这个重量最划算</text>
+        </view>
+        <view style="color: #2b6cff; font-weight: 700; font-size: 32rpx;">¥{{item.fee}}</view>
+      </view>
+      <view class="muted">{{item.fee_detail}}</view>
+      <view class="muted">{{item.value_range}} · {{item.days_min}}-{{item.days_max}}天</view>
+      <button size="mini" class="btn-outline" style="margin-top: 12rpx;"
+        data-line-id="{{item.line_id}}" bindtap="goOrderWithLine">用这条线下单</button>
+    </view>
+    <view class="hint" wx:if="{{feeResult.length}}" style="margin: 16rpx 0 0;">
+      两条线哪个便宜要看具体重量——精致小每 0.5kg 跳一档，无忧草每 0.1kg 跳一档，
+      所以刚跳完档的那一段无忧草反而更划算。按上面标出来的选就行。
+    </view>
+  </view>
+
+  <view class="card" bindtap="goMineForService">
+    <view class="row">
+      <view>
+        <view>有问题？联系客服</view>
+        <view class="muted">运费线下结算，加客服微信沟通</view>
+      </view>
+      <view class="muted">›</view>
     </view>
   </view>
 

@@ -128,10 +128,28 @@ def updateAddress(db, member, params):
     return _addr_dict(a)
 
 
+# 各字段的长度上限。SQLite 不强制列长度，不在入口截住的话一万字的地址能存进去，
+# 把后台页面撑爆，而且换成 MySQL 之后同样的数据会直接插入失败。
+_ADDRESS_LIMITS = {
+    "consigner": 32, "mobile": 20, "address": 255,
+    "idnumber": 32, "addressimg": 255,
+}
+
+
 def _apply_address_fields(a: models.Address, params):
-    for field in ("consigner", "mobile", "address", "idnumber", "addressimg"):
-        if field in params:
-            setattr(a, field, params[field])
+    for field, max_len in _ADDRESS_LIMITS.items():
+        if field not in params:
+            continue
+        value = params[field]
+        if value is None:
+            value = ""
+        if not isinstance(value, str):
+            raise ApiError(f"{field} 格式不正确")
+        value = value.strip()
+        if len(value) > max_len:
+            raise ApiError(f"这一项太长了（最多 {max_len} 个字）")
+        setattr(a, field, value)
+
     for field in ("province_id", "city_id", "district_id"):
         if field in params:
             setattr(a, field, params[field])

@@ -98,6 +98,28 @@
     z-index: 10;
   }
   .toast.show { opacity: 1; }
+  .w-input {
+    width: 92px; padding: 5px 7px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+  }
+  .thumbs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .thumb {
+    width: 38px; height: 38px; object-fit: cover; border-radius: 5px; border: 1px solid #e2e8f0;
+  }
+  .tag {
+    display: inline-block; margin-top: 3px; padding: 1px 6px; border-radius: 4px;
+    background: #fef3c7; color: #92400e; font-size: 11px;
+  }
+  .reg-form {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding: 12px; margin-bottom: 12px; background: #f8fafc; border-radius: 8px;
+  }
+  .reg-form input {
+    padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+  }
+  .badge {
+    display: none; min-width: 16px; padding: 0 5px; border-radius: 9px;
+    background: #ef4444; color: #fff; font-size: 11px; line-height: 16px; text-align: center;
+  }
 </style>
 </head>
 <body>
@@ -112,8 +134,11 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="packages" onclick="switchTab('packages')">待入库包裹</button>
-  <button class="tab-btn" data-tab="pending-orders" onclick="switchTab('pending-orders')">待发货订单</button>
+  <button class="tab-btn" data-tab="unpaid-orders" onclick="switchTab('unpaid-orders')">待收款 <span id="unpaid-badge" class="badge"></span></button>
+  <button class="tab-btn" data-tab="pending-orders" onclick="switchTab('pending-orders')">待打包发货</button>
+  <button class="tab-btn" data-tab="photo-tasks" onclick="switchTab('photo-tasks')">待拍照 <span id="photo-badge" class="badge"></span></button>
   <button class="tab-btn" data-tab="shipped-orders" onclick="switchTab('shipped-orders')">运输中订单</button>
+  <button class="tab-btn" data-tab="unclaimed" onclick="switchTab('unclaimed')">无主包裹 <span id="unclaimed-badge" class="badge"></span></button>
 </div>
 
 <main>
@@ -121,19 +146,50 @@
     <div class="toolbar"><button onclick="loadPackages()">刷新</button></div>
     <table>
       <thead><tr>
-        <th>会员</th><th>快递单号</th><th>品名</th><th>数量</th><th>净重(kg)</th><th>状态</th><th>操作</th>
+        <th>会员</th><th>快递单号</th><th>品名</th><th>数量</th>
+        <th>预报重量</th><th>实际称重(kg)</th><th>照片</th><th>状态</th><th>操作</th>
       </tr></thead>
       <tbody id="packages-body"></tbody>
     </table>
   </div>
 
-  <div class="panel" id="panel-pending-orders">
-    <div class="toolbar"><button onclick="loadPendingOrders()">刷新</button></div>
+  <div class="panel" id="panel-unpaid-orders">
+    <div class="toolbar">
+      <button onclick="loadUnpaidOrders()">刷新</button>
+      <a href="/export/orders.csv?status=pending" target="_blank"><button>导出 CSV</button></a>
+      <span class="muted">客户转账到了就点「已收款」。确认之后仓库才能打包发货。</span>
+    </div>
     <table>
       <thead><tr>
-        <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th>
+        <th>订单号</th><th>会员</th><th>金额</th><th>线路/重量</th><th>收件人</th><th>确认收款</th>
+      </tr></thead>
+      <tbody id="unpaid-orders-body"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-pending-orders">
+    <div class="toolbar">
+      <button onclick="loadPendingOrders()">刷新</button>
+      <span class="muted">这些都是已经收到钱的，可以打包发货了。</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th><th>收款</th>
       </tr></thead>
       <tbody id="pending-orders-body"></tbody>
+    </table>
+  </div>
+
+  <div class="panel" id="panel-photo-tasks">
+    <div class="toolbar">
+      <button onclick="loadPhotoTasks()">刷新</button>
+      <span class="muted">客户付费申请了入库拍照、但还没拍的包裹。拍完才会计费。</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>会员</th><th>快递单号</th><th>品名</th><th>状态</th><th>上传照片</th>
+      </tr></thead>
+      <tbody id="photo-tasks-body"></tbody>
     </table>
   </div>
 
@@ -141,12 +197,34 @@
     <div class="toolbar"><button onclick="loadShippedOrders()">刷新</button></div>
     <table>
       <thead><tr>
-        <th>订单号</th><th>会员</th><th>国际转运单号</th><th>追加物流轨迹</th>
+        <th>订单号</th><th>会员</th><th>国际转运单号</th><th>追加物流轨迹</th><th>完结</th>
       </tr></thead>
       <tbody id="shipped-orders-body"></tbody>
     </table>
   </div>
 </main>
+
+  <div class="panel" id="panel-unclaimed">
+    <div class="toolbar">
+      <button onclick="loadUnclaimed()">刷新</button>
+      <span class="muted">收到了但没人预报的包裹。登记后客户能在小程序里自己认领。</span>
+    </div>
+    <div class="reg-form">
+      <input id="u-express" placeholder="快递单号 *" />
+      <input id="u-name" placeholder="看到的品名（选填）" />
+      <input id="u-weight" type="number" step="0.001" min="0.001" placeholder="称重 kg（选填）" />
+      <input id="u-note" placeholder="备注，如「单号没写全」（选填）" />
+      <button onclick="pickUnclaimedPhoto()">选照片</button>
+      <span id="u-photo-state" class="muted">未选照片</span>
+      <button onclick="registerUnclaimed()">登记</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th>快递单号</th><th>品名</th><th>称重</th><th>备注</th><th>照片</th><th>登记时间</th><th>操作</th>
+      </tr></thead>
+      <tbody id="unclaimed-body"></tbody>
+    </table>
+  </div>
 
 <div class="toast" id="toast"></div>
 
@@ -205,42 +283,258 @@ function switchTab(tab) {
 function loadActivePanel() {
   const active = document.querySelector('.tab-btn.active').dataset.tab;
   if (active === 'packages') loadPackages();
+  if (active === 'unpaid-orders') loadUnpaidOrders();
   if (active === 'pending-orders') loadPendingOrders();
+  if (active === 'photo-tasks') loadPhotoTasks();
   if (active === 'shipped-orders') loadShippedOrders();
+  if (active === 'unclaimed') loadUnclaimed();
 }
 
 async function loadPackages() {
   const body = document.getElementById('packages-body');
-  body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
+  body.innerHTML = '<tr><td colspan="9" class="empty">加载中...</td></tr>';
   try {
     const list = await call('System.Order.staffPendingPackages');
-    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无待处理包裹</td></tr>'; return; }
+    if (!list.length) { body.innerHTML = '<tr><td colspan="9" class="empty">暂无待处理包裹</td></tr>'; return; }
     body.innerHTML = list.map((p) => `
       <tr>
         <td>${escapeHtml(p.member_nickname || '未设置昵称')}<div class="muted">${escapeHtml(p.member_mobile || '')}</div></td>
         <td>${escapeHtml(p.express_num)}</td>
-        <td>${escapeHtml(p.good_name)}</td>
+        <td>${escapeHtml(p.good_name)}${p.photo_requested ? '<div class="tag">已申请拍照</div>' : ''}</td>
         <td>${escapeHtml(p.count)}</td>
-        <td>${escapeHtml(p.netwt)}</td>
+        <td class="muted">${escapeHtml(p.netwt)} kg<div class="muted">客户填的，仅参考</div></td>
+        <td>${weightCell(p)}</td>
+        <td>${photoCell(p)}</td>
         <td>${STATUS_TEXT[p.status] || p.status}</td>
-        <td>${p.status === 'pending' ? `<button onclick="markInbound(${p.id})">标记入库</button>` : '<span class="muted">已入库，等待客户下单</span>'}</td>
+        <td>${packageActions(p)}</td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="9" class="empty">加载失败</td></tr>'; }
+}
+
+function weightCell(p) {
+  // 运费就是按这个数算的，所以入库时必须填，填完还要能看见、能改。
+  if (p.actual_weight === null) {
+    return `<input class="w-input" id="w-${p.id}" type="number" step="0.001" min="0.001" placeholder="必填" />`;
+  }
+  return `<strong>${escapeHtml(p.actual_weight)}</strong>
+          <div><input class="w-input" id="w-${p.id}" type="number" step="0.001" min="0.001"
+                      placeholder="改称重" /></div>`;
+}
+
+function photoCell(p) {
+  const thumbs = (p.photos || []).map((ph) => `
+    <a href="${escapeHtml(ph.url)}" target="_blank" title="${escapeHtml(ph.kind === 'packing' ? '打包留底' : '入库拍照')}">
+      <img class="thumb" src="${escapeHtml(ph.url)}" alt="" />
+    </a>`).join('');
+  return `<div class="thumbs">${thumbs || '<span class="muted">无</span>'}</div>`;
+}
+
+function packageActions(p) {
+  if (p.status === 'pending') {
+    return `<button onclick="markInbound(${p.id})">称重并入库</button>`;
+  }
+  if (p.status === 'inbound') {
+    return `<button onclick="reweigh(${p.id})">更新称重</button>
+            <button onclick="pickPhoto(${p.id}, 'inbound')">传入库照</button>
+            <button onclick="pickPhoto(${p.id}, 'packing')">传打包照</button>`;
+  }
+  return '<span class="muted">已进订单</span>';
+}
+
+function readWeight(id) {
+  const el = document.getElementById(`w-${id}`);
+  const v = (el && el.value || '').trim();
+  if (!v || Number(v) <= 0) { toast('请先填写实际称重（运费按这个算）'); return null; }
+  return v;
+}
+
+async function markInbound(id) {
+  const actual_weight = readWeight(id);
+  if (actual_weight === null) return;
+  await call('System.Order.markInbound', { id, actual_weight });
+  toast('已称重入库');
+  loadPackages();
+}
+
+async function reweigh(id) {
+  const actual_weight = readWeight(id);
+  if (actual_weight === null) return;
+  await call('System.Order.reweigh', { id, actual_weight });
+  toast('称重已更新');
+  loadPackages();
+}
+
+// ---- 拍照 ----
+
+// 图片是 multipart，走不了 /api 那套 JSON，所以单独 POST /upload，
+// 拿回 url 再调 addPackagePhoto 挂到包裹上。
+function pickPhoto(packageId, kind) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/jpeg,image/png,image/webp';
+  input.multiple = true;
+  input.onchange = async () => {
+    for (const file of input.files) {
+      try {
+        await uploadAndAttach(packageId, kind, file);
+      } catch (e) { return; }
+    }
+    toast('照片已上传');
+    loadActivePanel();
+  };
+  input.click();
+}
+
+async function uploadAndAttach(packageId, kind, file) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('staff_key', getKey());
+  const res = await fetch(`${BASE_URL}/upload`, { method: 'POST', body: form });
+  const json = await res.json();
+  if (json.code !== 0) { toast(json.msg || '上传失败'); throw new Error(json.msg); }
+  await call('System.Order.addPackagePhoto', { id: packageId, url: json.data.url, kind });
+}
+
+// ---- 无主包裹 ----
+
+let pendingUnclaimedPhoto = '';
+
+function pickUnclaimedPhoto() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/jpeg,image/png,image/webp';
+  input.onchange = async () => {
+    if (!input.files.length) return;
+    const form = new FormData();
+    form.append('file', input.files[0]);
+    form.append('staff_key', getKey());
+    const res = await fetch(`${BASE_URL}/upload`, { method: 'POST', body: form });
+    const json = await res.json();
+    if (json.code !== 0) { toast(json.msg || '上传失败'); return; }
+    pendingUnclaimedPhoto = json.data.url;
+    document.getElementById('u-photo-state').textContent = '照片已选好';
+    toast('照片已上传');
+  };
+  input.click();
+}
+
+async function registerUnclaimed() {
+  const express_num = document.getElementById('u-express').value.trim();
+  if (!express_num) { toast('请填写快递单号'); return; }
+  await call('System.Order.registerUnclaimed', {
+    express_num,
+    good_name: document.getElementById('u-name').value.trim(),
+    actual_weight: document.getElementById('u-weight').value.trim(),
+    note: document.getElementById('u-note').value.trim(),
+    photo_url: pendingUnclaimedPhoto,
+  });
+  ['u-express', 'u-name', 'u-weight', 'u-note'].forEach((id) => {
+    document.getElementById(id).value = '';
+  });
+  pendingUnclaimedPhoto = '';
+  document.getElementById('u-photo-state').textContent = '未选照片';
+  toast('已登记，客户可以认领了');
+  loadUnclaimed();
+}
+
+async function loadUnclaimed() {
+  const body = document.getElementById('unclaimed-body');
+  body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffUnclaimed');
+    const badge = document.getElementById('unclaimed-badge');
+    badge.textContent = list.length || '';
+    badge.style.display = list.length ? 'inline-block' : 'none';
+    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">没有待认领的包裹</td></tr>'; return; }
+    body.innerHTML = list.map((u) => `
+      <tr>
+        <td>${escapeHtml(u.express_num)}</td>
+        <td>${escapeHtml(u.good_name || '—')}</td>
+        <td>${escapeHtml(u.actual_weight || '—')}</td>
+        <td>${escapeHtml(u.note || '—')}</td>
+        <td>${u.photo_url ? `<a href="${escapeHtml(u.photo_url)}" target="_blank"><img class="thumb" src="${escapeHtml(u.photo_url)}" alt="" /></a>` : '<span class="muted">无</span>'}</td>
+        <td class="muted">${escapeHtml(u.created_at.slice(0, 16).replace('T', ' '))}</td>
+        <td><button onclick="deleteUnclaimed(${u.id})">删除</button></td>
       </tr>
     `).join('');
   } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }
 }
 
-async function markInbound(id) {
-  await call('System.Order.markInbound', { id });
-  toast('已标记入库');
-  loadPackages();
+async function deleteUnclaimed(id) {
+  if (!confirm('确认删除这条登记？')) return;
+  await call('System.Order.deleteUnclaimed', { id });
+  toast('已删除');
+  loadUnclaimed();
+}
+
+async function loadPhotoTasks() {
+  const body = document.getElementById('photo-tasks-body');
+  body.innerHTML = '<tr><td colspan="5" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffPhotoTasks');
+    const badge = document.getElementById('photo-badge');
+    badge.textContent = list.length || '';
+    badge.style.display = list.length ? 'inline-block' : 'none';
+    if (!list.length) { body.innerHTML = '<tr><td colspan="5" class="empty">没有待拍照的包裹</td></tr>'; return; }
+    body.innerHTML = list.map((p) => `
+      <tr>
+        <td>${escapeHtml(p.member_nickname || '未设置昵称')}<div class="muted">${escapeHtml(p.member_mobile || '')}</div></td>
+        <td>${escapeHtml(p.express_num)}</td>
+        <td>${escapeHtml(p.good_name)}</td>
+        <td>${STATUS_TEXT[p.status] || p.status}</td>
+        <td><button onclick="pickPhoto(${p.id}, 'inbound')">上传入库照片</button></td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="5" class="empty">加载失败</td></tr>'; }
+}
+
+async function loadUnpaidOrders() {
+  const body = document.getElementById('unpaid-orders-body');
+  body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffOrders', { status: 'pending' });
+    const badge = document.getElementById('unpaid-badge');
+    badge.textContent = list.length || '';
+    badge.style.display = list.length ? 'inline-block' : 'none';
+    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">没有待收款的订单</td></tr>'; return; }
+    body.innerHTML = list.map((o) => `
+      <tr>
+        <td>${escapeHtml(o.order_no)}<div class="muted">${escapeHtml(o.created_at.slice(0, 16).replace('T', ' '))}</div></td>
+        <td>${escapeHtml(o.member_nickname || '')}<div class="muted">${escapeHtml(o.member_mobile || '')}</div></td>
+        <td><strong style="color:#dc2626;">¥${escapeHtml(o.total_fee)}</strong>${feeBreakdown(o)}</td>
+        <td>${escapeHtml(o.line_name)}<div class="muted">${escapeHtml(o.total_weight)}kg / ${o.item_count}件</div></td>
+        <td>${escapeHtml(o.address.consigner)}<div class="muted">${escapeHtml(o.address.mobile)}</div></td>
+        <td>
+          <div class="row-flex">
+            <input class="inline" id="pay-${o.id}" placeholder="收款备注，如微信尾号" style="width: 160px;" />
+            <button onclick="markPaid(${o.id})">已收款</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>'; }
+}
+
+function feeBreakdown(o) {
+  if (!o.fees || !o.fees.length) return '';
+  return `<div class="muted">${o.fees.map((f) => `${escapeHtml(f.name)} ¥${escapeHtml(f.amount)}`).join('<br>')}</div>`;
+}
+
+async function markPaid(id) {
+  const note = (document.getElementById(`pay-${id}`) || {}).value || '';
+  if (!confirm('确认已经收到这一单的运费？确认后仓库就可以发货了。')) return;
+  await call('System.Order.markPaid', { id, payment_note: note.trim() });
+  toast('已确认收款，可以打包发货了');
+  loadUnpaidOrders();
 }
 
 async function loadPendingOrders() {
   const body = document.getElementById('pending-orders-body');
-  body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
   try {
-    const list = await call('System.Order.staffOrders', { status: 'pending' });
-    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无待发货订单</td></tr>'; return; }
+    const list = await call('System.Order.staffOrders', { status: 'paid' });
+    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无待打包订单（要先在「待收款」里确认收款）</td></tr>'; return; }
     body.innerHTML = list.map((o) => `
       <tr>
         <td>${escapeHtml(o.order_no)}</td>
@@ -254,9 +548,21 @@ async function loadPendingOrders() {
             <button onclick="markShipped(${o.id})">标记发货</button>
           </div>
         </td>
+        <td>
+          <div class="muted">${escapeHtml(o.paid_at ? o.paid_at.slice(0, 16).replace('T', ' ') : '')}</div>
+          <button onclick="revertPaid(${o.id})">撤回收款</button>
+        </td>
       </tr>
     `).join('');
-  } catch (e) { body.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>'; }
+  } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }
+}
+
+// 收款点错了要能改回去——不撤回的话仓库就会把一单没收到钱的货发出去。
+async function revertPaid(id) {
+  if (!confirm('撤回这一单的收款记录？撤回后它会回到「待收款」，仓库发不了货。')) return;
+  await call('System.Order.revertPaid', { id });
+  toast('已撤回收款');
+  loadPendingOrders();
 }
 
 async function markShipped(id) {
@@ -269,10 +575,10 @@ async function markShipped(id) {
 
 async function loadShippedOrders() {
   const body = document.getElementById('shipped-orders-body');
-  body.innerHTML = '<tr><td colspan="4" class="empty">加载中...</td></tr>';
+  body.innerHTML = '<tr><td colspan="5" class="empty">加载中...</td></tr>';
   try {
     const list = await call('System.Order.staffOrders', { status: 'shipped' });
-    if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="empty">暂无运输中订单</td></tr>'; return; }
+    if (!list.length) { body.innerHTML = '<tr><td colspan="5" class="empty">暂无运输中订单</td></tr>'; return; }
     body.innerHTML = list.map((o) => `
       <tr>
         <td>${escapeHtml(o.order_no)}</td>
@@ -284,9 +590,19 @@ async function loadShippedOrders() {
             <button onclick="addTrack(${o.id})">追加</button>
           </div>
         </td>
+        <td><button onclick="markSigned(${o.id})">标记签收</button></td>
       </tr>
     `).join('');
-  } catch (e) { body.innerHTML = '<tr><td colspan="4" class="empty">加载失败</td></tr>'; }
+  } catch (e) { body.innerHTML = '<tr><td colspan="5" class="empty">加载失败</td></tr>'; }
+}
+
+// 用户自己会在小程序里点"确认收到"。这个按钮是兜底：用户不点、或者物流
+// 已经显示签收但用户没反馈时，客服代为完结，免得订单永远挂在"运输中"。
+async function markSigned(id) {
+  if (!confirm('确认把这个订单标记为已签收？')) return;
+  await call('System.Order.markSigned', { id });
+  toast('已标记签收');
+  loadShippedOrders();
 }
 
 async function addTrack(id) {

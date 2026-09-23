@@ -28,6 +28,10 @@ Page({
       .catch(() => {});
   },
 
+  goMineForService() {
+    wx.switchTab({ url: '/pages/mine/mine' });
+  },
+
   onCopyAddress() {
     if (!this.data.warehouse) return;
     const w = this.data.warehouse;
@@ -47,8 +51,21 @@ Page({
       return;
     }
     call('System.Address.estimateFee', { weight })
-      .then((result) => this.setData({ feeResult: result }))
+      .then((result) => // 后端已按价格升序返回。两条线各有便宜的区间（精致小每 0.5kg 跳 ¥35 跳得粗，
+        // 无忧草每 0.1kg 跳 ¥8 跳得细，刚跳完档那一段无忧草反而赢），所以哪条更划算
+        // 得看具体重量，直接把最便宜的标出来，省得用户自己比。
+        this.setData({
+          feeResult: result.map((r, i) => ({ ...r, cheapest: i === 0 && result.length > 1 })),
+        }))
       .catch(() => {});
+  },
+
+  // 算完价直接进下单页，线路已经选好——用户刚比较完价格，正是最想下单的时候，
+  // 让他再去菜单里找一遍下单入口、再把线路重选一次，就是在劝退。
+  goOrderWithLine(e) {
+    wx.navigateTo({
+      url: `/pages/order-create/order-create?line_id=${e.currentTarget.dataset.lineId}`,
+    });
   },
 
   goForecast() {

@@ -13,9 +13,28 @@
       <view class="tag {{item.statusInfo.cls}}">{{item.statusInfo.text}}</view>
     </view>
     <view class="muted" style="margin-top: 8rpx;">单号：{{item.express_num}}</view>
-    <view class="muted">数量 {{item.count}} · 净重 {{item.netwt}}kg · 价值 ¥{{item.price}}</view>
-    <view class="row" style="margin-top: 16rpx;" wx:if="{{item.status === 'pending' || item.status === 'inbound'}}">
-      <view></view>
+    <view class="muted">数量 {{item.count}} · 价值 ¥{{item.price}}</view>
+
+    <!-- 重量：仓库称过就以称重为准（运费按这个算），没称过只能显示用户自己填的 -->
+    <view class="weight-row" wx:if="{{item.actual_weight}}">
+      <view class="weight-actual">{{item.actual_weight}} kg</view>
+      <view class="muted">仓库实测，运费按此计算</view>
+      <view class="weight-declared" wx:if="{{item.netwt != item.actual_weight}}">预报 {{item.netwt}}</view>
+    </view>
+    <view class="muted" wx:else>预报净重 {{item.netwt}}kg（到仓后以实际称重为准）</view>
+
+    <view class="photo-strip" wx:if="{{item.hasPhotos}}">
+      <image wx:for="{{item.photoUrls}}" wx:for-item="url" wx:key="*this"
+        class="photo-thumb" src="{{url}}" mode="aspectFill"
+        data-urls="{{item.photoUrls}}" data-current="{{url}}" bindtap="onPreviewPhoto" />
+    </view>
+
+    <view class="row" style="margin-top: 16rpx;" wx:if="{{item.canAskPhoto}}">
+      <button size="mini" class="btn-outline"
+        data-id="{{item.id}}" data-requested="{{item.photo_requested}}" data-done="{{item.photoDone}}"
+        bindtap="onTogglePhoto">
+        {{item.photoDone ? '已拍照' : (item.photo_requested ? '已申请拍照·点击取消' : '申请拍照')}}
+      </button>
       <button size="mini" class="btn-outline" data-id="{{item.id}}" bindtap="onDelete">删除</button>
     </view>
   </view>

@@ -22,6 +22,8 @@ PUBLIC_METHODS = {
     "System.Config.getCurrentTime",
     "System.Config.noticeConfig",
     "System.Config.getVertification",
+    # 客服联系方式：用户没登录也可能想先问问，不该挡在登录后面
+    "System.Config.customerService",
     "System.Address.province",
     "System.Address.city",
     "System.Address.district",
@@ -38,6 +40,18 @@ PUBLIC_METHODS = {
     "System.Order.addTrack",
     "System.Order.staffPendingPackages",
     "System.Order.staffOrders",
+    "System.Order.reweigh",
+    "System.Order.staffPhotoTasks",
+    "System.Order.addPackagePhoto",
+    "System.Order.deletePackagePhoto",
+    # 拍照服务报价：预报页要在勾选框旁边显示"+¥2.50"，登录前也可能看到
+    "System.Order.photoServiceInfo",
+    "System.Order.registerUnclaimed",
+    "System.Order.staffUnclaimed",
+    "System.Order.deleteUnclaimed",
+    "System.Order.markSigned",
+    "System.Order.markPaid",
+    "System.Order.revertPaid",
 }
 
 

@@ -1,19 +1,57 @@
 <view class="container" wx:if="{{member}}">
-  <view class="card row">
-    <view>
-      <view style="font-size: 32rpx; font-weight: 600;">{{member.nickname || '未设置昵称'}}</view>
-      <view class="muted">{{member.mobile || '未绑定手机号'}}</view>
+  <view class="card">
+    <view class="row" style="padding: 8rpx 0;" bindtap="onEditProfile">
+      <view class="muted">昵称</view>
+      <view>{{member.nickname || '未设置'}} <text style="color: #2b6cff;">修改</text></view>
+    </view>
+    <view class="row" style="padding: 8rpx 0;" bindtap="onEditMobile">
+      <view class="muted">手机号</view>
+      <view>{{member.mobile || '未绑定'}} <text style="color: #2b6cff;">{{member.mobile ? '修改' : '绑定'}}</text></view>
+    </view>
+    <view class="hint" style="margin: 8rpx 0 0;">
+      留个昵称和手机号，包裹有问题时客服才能第一时间找到你
     </view>
   </view>
 
   <view class="card">
     <view class="row" style="padding: 8rpx 0;">
-      <view class="muted">清关码</view>
-      <view>{{member.cn_code}}</view>
+      <view class="muted">我的会员代码</view>
+      <view style="font-weight: 600; font-size: 32rpx;">{{member.cn_code}}</view>
     </view>
-    <view class="row" style="padding: 8rpx 0;">
-      <view class="muted">账户余额</view>
-      <view>¥{{member.balance}}</view>
+    <view class="hint" style="margin: 8rpx 0 0;">
+      往日本仓寄东西时，务必把这个代码写在快递单上，否则仓库认不出是谁的包裹
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{hasService}}">
+    <view class="section-title">联系客服</view>
+    <view class="muted" wx:if="{{service.note}}" style="margin-bottom: 16rpx;">{{service.note}}</view>
+
+    <view class="row" style="padding: 12rpx 0;" wx:if="{{service.wechat}}" bindtap="onCopyWechat">
+      <view class="muted">客服微信</view>
+      <view>{{service.wechat}} <text style="color: #2b6cff;">复制</text></view>
+    </view>
+
+    <view class="row" style="padding: 12rpx 0;" wx:if="{{service.phone}}" bindtap="onCallService">
+      <view class="muted">客服电话</view>
+      <view>{{service.phone}} <text style="color: #2b6cff;">拨打</text></view>
+    </view>
+
+    <view wx:if="{{service.qrcode}}" style="text-align: center; margin-top: 16rpx;">
+      <image src="{{service.qrcode}}" mode="widthFix" style="width: 340rpx;" bindtap="onPreviewQrcode" />
+      <view class="muted">长按或点击保存，加客服微信</view>
+    </view>
+
+    <view class="muted" wx:if="{{service.hours}}" style="margin-top: 12rpx;">服务时间：{{service.hours}}</view>
+  </view>
+
+  <view class="card" bindtap="goClaim">
+    <view class="row">
+      <view>
+        <view>认领包裹</view>
+        <view class="muted">寄来了但忘了预报？在这里认领</view>
+      </view>
+      <view class="muted">›</view>
     </view>
   </view>
 

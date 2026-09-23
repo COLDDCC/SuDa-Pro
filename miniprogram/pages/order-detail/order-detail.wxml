@@ -4,6 +4,24 @@
     <view class="tag {{order.statusInfo.cls}}">{{order.statusInfo.text}}</view>
   </view>
 
+  <view class="card" wx:if="{{order.status === 'pending'}}" style="border-left: 8rpx solid #f59e0b;">
+    <view class="section-title">待付款 ¥{{order.total_fee}}</view>
+    <view class="muted">
+      运费由客服线下收取。加客服微信把订单号发过去，客服会发收款码给你；
+      收款确认后仓库就开始打包发货。
+    </view>
+    <view class="row" style="margin-top: 16rpx;" wx:if="{{service.wechat}}" bindtap="onCopyWechat">
+      <view class="muted">客服微信</view>
+      <view>{{service.wechat}} <text style="color: #2b6cff;">复制</text></view>
+    </view>
+    <button class="btn-outline" style="margin-top: 16rpx;" bindtap="onCopyOrderNo">复制订单号</button>
+  </view>
+
+  <view class="card" wx:if="{{order.status === 'paid'}}" style="border-left: 8rpx solid #4f46e5;">
+    <view class="section-title">已收到款，等待仓库打包</view>
+    <view class="muted">仓库会尽快打包并安排最近一班航班，发出后这里会显示国际转运单号。</view>
+  </view>
+
   <view class="card" wx:if="{{order.inter_order}}">
     <view class="section-title">国际转运单号</view>
     <view>{{order.inter_order}}</view>
@@ -22,15 +40,34 @@
         <view>{{item.good_name}}</view>
         <view class="tag {{item.statusInfo.cls}}">{{item.statusInfo.text}}</view>
       </view>
-      <view class="muted">净重 {{item.netwt}}kg</view>
+      <view class="muted">
+        计费重量 {{item.actual_weight}}kg<block wx:if="{{item.netwt != item.actual_weight}}">（预报 {{item.netwt}}kg）</block>
+      </view>
+      <view class="photo-strip" wx:if="{{item.hasPhotos}}">
+        <image wx:for="{{item.photoUrls}}" wx:for-item="url" wx:key="*this"
+          class="photo-thumb" src="{{url}}" mode="aspectFill"
+          data-urls="{{item.photoUrls}}" data-current="{{url}}" bindtap="onPreviewPhoto" />
+      </view>
     </view>
   </view>
 
   <view class="card">
-    <view class="section-title">费用</view>
-    <view class="row">
-      <view class="muted">线路：{{order.line_name}}</view>
-      <view style="color: #2b6cff; font-weight: 700;">¥{{order.total_fee}}</view>
+    <view class="section-title">费用明细</view>
+    <view wx:for="{{order.fees}}" wx:key="fee_type" class="fee-row">
+      <view class="fee-name">
+        <view>{{item.name}}</view>
+        <view class="fee-detail">{{item.detail}}</view>
+      </view>
+      <view class="fee-amount">¥{{item.amount}}</view>
+    </view>
+    <view class="fee-total">
+      <view>合计</view>
+      <view class="fee-total-amount">¥{{order.total_fee}}</view>
+    </view>
+    <view class="hint" style="margin: 16rpx 0 0;">费用由客服线下收取，小程序暂不支持在线支付</view>
+    <view class="row" style="margin-top: 12rpx;" wx:if="{{service.wechat}}" bindtap="onCopyWechat">
+      <view class="muted">客服微信</view>
+      <view>{{service.wechat}} <text style="color: #2b6cff;">复制</text></view>
     </view>
   </view>
 
@@ -43,5 +80,6 @@
     </view>
   </view>
 
+  <button wx:if="{{order.status === 'shipped'}}" class="btn-primary" bindtap="onConfirmReceived">确认收到包裹</button>
   <button wx:if="{{order.status === 'pending'}}" class="btn-outline" bindtap="onCloseOrder">关闭订单</button>
 </view>

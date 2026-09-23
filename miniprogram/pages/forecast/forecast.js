@@ -11,6 +11,19 @@ Page({
       cc_registered_price: '',
     },
     pasteText: '',
+    photoRequested: false,
+    photoFee: '',
+  },
+
+  onLoad() {
+    // 勾选框旁边要写清楚多少钱，价格由后端给，改价不用重发小程序。
+    call('System.Order.photoServiceInfo')
+      .then((info) => this.setData({ photoFee: info.fee }))
+      .catch(() => {});
+  },
+
+  onPhotoToggle(e) {
+    this.setData({ photoRequested: e.detail.value });
   },
 
   onFieldInput(e) {
@@ -53,6 +66,7 @@ Page({
       netwt: Number(f.netwt) || 0,
       price: Number(f.price) || 0,
       cc_registered_price: Number(f.cc_registered_price) || Number(f.price) || 0,
+      photo_requested: this.data.photoRequested,
     })
       .then(() => {
         wx.hideLoading();
