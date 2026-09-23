@@ -4,14 +4,13 @@
 真实小程序拿不到 openid，只能拿到 wx.login() 的 code，交给后端换 openid，
 所以这里按微信官方推荐流程实现：小程序传 code，后端用 code2Session 换 openid。
 """
-import uuid
-
 import httpx
 
 from ..config import WX_APPID, WX_SECRET
 from ..errors import ApiError
 from ..auth import create_token
 from .. import models
+from ..member_code import assign_member_code
 
 WX_CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
 
@@ -46,11 +45,11 @@ def wechatLogin(db, member, params):
             unionid=unionid,
             nickname=params.get("nickname", ""),
             avatar=params.get("avatar", ""),
-            cn_code=uuid.uuid4().hex[:8].upper(),
         )
         db.add(m)
         db.commit()
         db.refresh(m)
+        assign_member_code(db, m)
     else:
         changed = False
         if params.get("nickname") and m.nickname != params["nickname"]:
@@ -81,11 +80,11 @@ def devLogin(db, member, params):
         m = models.Member(
             openid=fake_openid,
             nickname=params.get("nickname", identifier),
-            cn_code=uuid.uuid4().hex[:8].upper(),
         )
         db.add(m)
         db.commit()
         db.refresh(m)
+        assign_member_code(db, m)
     token = create_token(m.id)
     return {"token": token, "is_new": m.mobile == "", "member_id": m.id}
 

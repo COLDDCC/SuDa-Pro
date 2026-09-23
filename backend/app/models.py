@@ -241,6 +241,30 @@ class OrderFee(Base):
     order = relationship("Order", back_populates="fees")
 
 
+class UnclaimedPackage(Base):
+    """无主包裹 —— 仓库收到了，但没人预报过。
+
+    500 人规模下这一定会发生：用户忘了预报、快递单上会员代码写错或没写。
+    仓库先把单号和照片登记下来，用户在小程序里自己认领，省掉一个个微信问的功夫。
+    认领之后会转成一个正常的已入库包裹（claimed_package_id 记下转成了哪个）。
+    """
+    __tablename__ = "unclaimed_packages"
+
+    id = Column(Integer, primary_key=True)
+    shop_id = Column(Integer, default=1)
+    express_num = Column(String(64), nullable=False, index=True)
+    good_name = Column(String(128), default="")      # 仓库肉眼看到的品名，可留空
+    actual_weight = Column(Numeric(10, 3), nullable=True)
+    note = Column(String(255), default="")           # 如"单号只写了后四位""没写会员代码"
+    photo_url = Column(String(255), default="")      # 拍一张方便用户认
+
+    claimed_by = Column(Integer, ForeignKey("members.id"), nullable=True)
+    claimed_package_id = Column(Integer, ForeignKey("packages.id"), nullable=True)
+    claimed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=now)
+
+
 class OrderItem(Base):
     __tablename__ = "order_items"
 

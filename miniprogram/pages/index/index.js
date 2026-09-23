@@ -28,6 +28,10 @@ Page({
       .catch(() => {});
   },
 
+  goMineForService() {
+    wx.switchTab({ url: '/pages/mine/mine' });
+  },
+
   onCopyAddress() {
     if (!this.data.warehouse) return;
     const w = this.data.warehouse;

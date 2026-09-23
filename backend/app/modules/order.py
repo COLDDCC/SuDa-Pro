@@ -358,6 +358,131 @@ def staffOrders(db, member, params):
     } for o in rows]
 
 
+# ---- 无主包裹（仓库收到了，但没人预报过） ----
+
+def _unclaimed_dict(u: models.UnclaimedPackage):
+    return {
+        "id": u.id,
+        "express_num": u.express_num,
+        "good_name": u.good_name,
+        "actual_weight": str(u.actual_weight) if u.actual_weight is not None else None,
+        "note": u.note,
+        "photo_url": u.photo_url,
+        "created_at": u.created_at.isoformat(),
+        "claimed": u.claimed_by is not None,
+    }
+
+
+def registerUnclaimed(db, member, params):
+    """仓库登记一个没人认领的包裹。"""
+    _require_staff(params)
+    express_num = params.get("express_num")
+    if not express_num:
+        raise ApiError("请填写快递单号")
+
+    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量")
+    if actual_weight is not None and actual_weight <= 0:
+        raise ApiError("实际重量必须大于 0")
+
+    u = models.UnclaimedPackage(
+        shop_id=params.get("shop_id", 1),
+        express_num=express_num,
+        good_name=params.get("good_name", ""),
+        actual_weight=actual_weight,
+        note=params.get("note", ""),
+        photo_url=params.get("photo_url", ""),
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return _unclaimed_dict(u)
+
+
+def staffUnclaimed(db, member, params):
+    """仓库看还没被认领的。"""
+    _require_staff(params)
+    rows = db.query(models.UnclaimedPackage).filter(
+        models.UnclaimedPackage.claimed_by.is_(None)
+    ).order_by(models.UnclaimedPackage.id.desc()).all()
+    return [_unclaimed_dict(u) for u in rows]
+
+
+def deleteUnclaimed(db, member, params):
+    """登记错了能删。已经被认领的不让删——那条记录是用户包裹的来源凭证。"""
+    _require_staff(params)
+    u = db.query(models.UnclaimedPackage).filter_by(id=params.get("id")).first()
+    if not u:
+        raise ApiError("记录不存在")
+    if u.claimed_by is not None:
+        raise ApiError("已被认领，不能删除")
+    db.delete(u)
+    db.commit()
+    return {"ok": True}
+
+
+def unclaimedList(db, member, params):
+    """用户端：看仓库里还没人认领的包裹，找找有没有自己的。
+
+    只给单号后四位，不给完整单号——完整单号摆出来，任何人都能照着认领别人的包裹。
+    """
+    rows = db.query(models.UnclaimedPackage).filter(
+        models.UnclaimedPackage.claimed_by.is_(None)
+    ).order_by(models.UnclaimedPackage.id.desc()).limit(100).all()
+    return [{
+        "id": u.id,
+        "express_tail": u.express_num[-4:],
+        "good_name": u.good_name,
+        "actual_weight": str(u.actual_weight) if u.actual_weight is not None else None,
+        "note": u.note,
+        "photo_url": u.photo_url,
+        "created_at": u.created_at.isoformat(),
+    } for u in rows]
+
+
+def claimPackage(db, member, params):
+    """用户认领：填完整单号，对上了就转成自己的已入库包裹。
+
+    要求填完整单号（不是从列表里点一下就认领），是为了确认他真的知道这个单号。
+    """
+    express_num = (params.get("express_num") or "").strip()
+    if not express_num:
+        raise ApiError("请填写完整的快递单号")
+
+    u = db.query(models.UnclaimedPackage).filter_by(
+        express_num=express_num, claimed_by=None,
+    ).first()
+    if not u:
+        raise ApiError("没找到这个单号的无主包裹，请核对单号，或联系客服")
+
+    p = models.Package(
+        member_id=member.id,
+        shop_id=u.shop_id,
+        express_num=u.express_num,
+        good_name=u.good_name or params.get("good_name") or "认领包裹",
+        count=1,
+        netwt=u.actual_weight or 0,
+        actual_weight=u.actual_weight,
+        weighed_at=models.now() if u.actual_weight is not None else None,
+        status=models.Package.STATUS_INBOUND,
+        inbound_at=models.now(),
+    )
+    db.add(p)
+    db.flush()
+
+    if u.photo_url:
+        db.add(models.PackagePhoto(
+            package_id=p.id, kind=models.PackagePhoto.KIND_INBOUND,
+            url=u.photo_url, note="仓库登记无主包裹时拍摄",
+        ))
+
+    u.claimed_by = member.id
+    u.claimed_package_id = p.id
+    u.claimed_at = models.now()
+    db.commit()
+    db.refresh(p)
+    return _pkg_dict(p)
+
+
 # ---- 下单发货 ----
 
 def getLine(db, member, params):
@@ -638,6 +763,41 @@ def markShipped(db, member, params):
         order_id=o.id,
         status_text=f"已发出，国际转运单号 {inter_order}",
         location=params.get("location", "日本仓"),
+    ))
+    db.commit()
+    return _order_summary(o)
+
+
+def confirmReceived(db, member, params):
+    """用户确认签收，订单到此完结。
+
+    没有这一步的话订单永远停在"运输中"，你分不清哪些已经做完了。
+    """
+    order_id = params.get("order_id") or params.get("id")
+    o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    if o.status != models.Order.STATUS_SHIPPED:
+        raise ApiError("只有运输中的订单可以确认签收")
+    o.status = models.Order.STATUS_SIGNED
+    db.add(models.OrderTrack(order_id=o.id, status_text="用户确认签收", location=""))
+    db.commit()
+    return _order_summary(o)
+
+
+def markSigned(db, member, params):
+    """客服代为标记签收：用户不会点、或者物流显示已签收但用户没反馈时用。"""
+    _require_staff(params)
+    order_id = params.get("order_id") or params.get("id")
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    if o.status != models.Order.STATUS_SHIPPED:
+        raise ApiError("只有运输中的订单可以标记签收")
+    o.status = models.Order.STATUS_SIGNED
+    db.add(models.OrderTrack(
+        order_id=o.id, status_text=params.get("status_text", "已签收"),
+        location=params.get("location", ""),
     ))
     db.commit()
     return _order_summary(o)

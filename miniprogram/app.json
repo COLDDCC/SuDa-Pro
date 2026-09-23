@@ -9,7 +9,8 @@
     "pages/order-detail/order-detail",
     "pages/address-list/address-list",
     "pages/address-edit/address-edit",
-    "pages/mine/mine"
+    "pages/mine/mine",
+    "pages/claim/claim"
   ],
   "window": {
     "backgroundTextStyle": "light",
@@ -23,10 +24,22 @@
     "selectedColor": "#2b6cff",
     "backgroundColor": "#ffffff",
     "list": [
-      { "pagePath": "pages/index/index", "text": "首页" },
-      { "pagePath": "pages/packages/packages", "text": "我的包裹" },
-      { "pagePath": "pages/orders/orders", "text": "订单" },
-      { "pagePath": "pages/mine/mine", "text": "我的" }
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/packages/packages",
+        "text": "我的包裹"
+      },
+      {
+        "pagePath": "pages/orders/orders",
+        "text": "订单"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的"
+      }
     ]
   },
   "style": "v2",

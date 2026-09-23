@@ -47,6 +47,10 @@
       <view class="fee-total-amount">¥{{order.total_fee}}</view>
     </view>
     <view class="hint" style="margin: 16rpx 0 0;">费用由客服线下收取，小程序暂不支持在线支付</view>
+    <view class="row" style="margin-top: 12rpx;" wx:if="{{service.wechat}}" bindtap="onCopyWechat">
+      <view class="muted">客服微信</view>
+      <view>{{service.wechat}} <text style="color: #2b6cff;">复制</text></view>
+    </view>
   </view>
 
   <view class="card">
@@ -58,5 +62,6 @@
     </view>
   </view>
 
+  <button wx:if="{{order.status === 'shipped'}}" class="btn-primary" bindtap="onConfirmReceived">确认收到包裹</button>
   <button wx:if="{{order.status === 'pending'}}" class="btn-outline" bindtap="onCloseOrder">关闭订单</button>
 </view>
