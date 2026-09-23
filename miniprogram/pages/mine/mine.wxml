@@ -1,8 +1,15 @@
 <view class="container" wx:if="{{member}}">
-  <view class="card row">
-    <view>
-      <view style="font-size: 32rpx; font-weight: 600;">{{member.nickname || '未设置昵称'}}</view>
-      <view class="muted">{{member.mobile || '未绑定手机号'}}</view>
+  <view class="card">
+    <view class="row" style="padding: 8rpx 0;" bindtap="onEditProfile">
+      <view class="muted">昵称</view>
+      <view>{{member.nickname || '未设置'}} <text style="color: #2b6cff;">修改</text></view>
+    </view>
+    <view class="row" style="padding: 8rpx 0;" bindtap="onEditMobile">
+      <view class="muted">手机号</view>
+      <view>{{member.mobile || '未绑定'}} <text style="color: #2b6cff;">{{member.mobile ? '修改' : '绑定'}}</text></view>
+    </view>
+    <view class="hint" style="margin: 8rpx 0 0;">
+      留个昵称和手机号，包裹有问题时客服才能第一时间找到你
     </view>
   </view>
 

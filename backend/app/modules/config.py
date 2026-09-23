@@ -1,11 +1,21 @@
 """System.Config.* — 站点基础配置。真实内容在 app/business.py 里改。"""
 import datetime
 
+from ..config import WX_APPID, WX_SECRET
 from .. import business
 
 
 def webSite(db, member, params):
-    return {"name": business.SITE_NAME, "slogan": business.SITE_SLOGAN}
+    """站点基础信息。
+
+    带上 wechat_login：配齐微信凭证后 devLogin 会自动禁用，前端得据此把
+    「本地联调登录」按钮藏起来——留着它用户点了只会看到一条看不懂的报错。
+    """
+    return {
+        "name": business.SITE_NAME,
+        "slogan": business.SITE_SLOGAN,
+        "wechat_login": bool(WX_APPID and WX_SECRET),
+    }
 
 
 def customerService(db, member, params):

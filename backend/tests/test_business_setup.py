@@ -139,3 +139,48 @@ def test_staff_can_mark_signed_on_behalf(api, shipped_order):
 def test_mark_signed_needs_staff_key(api, token, shipped_order):
     assert api.fail("System.Order.markSigned",
                     {"order_id": shipped_order["order_id"]}, token)["code"] == 403
+
+
+# ---- 登录方式开关 ----
+
+def test_site_tells_the_frontend_whether_wechat_login_works(api, monkeypatch):
+    """配齐微信凭证后 devLogin 会被禁用，前端得据此藏起「本地联调登录」按钮——
+    留着它用户点了只会看到一条看不懂的报错。"""
+    from app.modules import config as config_mod
+
+    monkeypatch.setattr(config_mod, "WX_APPID", "")
+    monkeypatch.setattr(config_mod, "WX_SECRET", "")
+    assert api.ok("System.Config.webSite")["wechat_login"] is False
+
+    monkeypatch.setattr(config_mod, "WX_APPID", "wx48aef7da6d3d6b6a")
+    monkeypatch.setattr(config_mod, "WX_SECRET", "x" * 32)
+    assert api.ok("System.Config.webSite")["wechat_login"] is True
+
+
+def test_site_name_and_slogan_are_served_for_the_login_page(api):
+    """登录页的品牌名从后端取，改名只要改 business.py，不用重发小程序。"""
+    site = api.ok("System.Config.webSite")
+    assert site["name"] and site["slogan"]
+
+
+# ---- 完善资料：昵称和手机号 ----
+
+def test_member_can_set_a_nickname(api, token):
+    """微信登录拿不到昵称，后台会看到一片「未设昵称」，所以要能手填。"""
+    api.ok("System.Member.saveNickName", {"nickName": "小明"}, token)
+    assert api.ok("System.Member.memberInfo", {}, token)["nickname"] == "小明"
+
+
+def test_member_can_bind_a_mobile(api, token):
+    """客户没下单前，手机号是唯一能联系上他的方式。"""
+    api.ok("System.Login.checkMobile", {"mobile": "13800001111"}, token)
+    assert api.ok("System.Member.memberInfo", {}, token)["mobile"] == "13800001111"
+
+
+@pytest.mark.parametrize("bad", ["138", "1380000111a", "23800001111", ""])
+def test_binding_rejects_a_bad_mobile(api, token, bad):
+    api.fail("System.Login.checkMobile", {"mobile": bad}, token)
+
+
+def test_binding_a_mobile_requires_login(api):
+    assert api.fail("System.Login.checkMobile", {"mobile": "13800001111"})["code"] == 401

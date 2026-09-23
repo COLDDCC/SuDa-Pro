@@ -174,7 +174,7 @@
     </div>
     <table>
       <thead><tr>
-        <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th>
+        <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th><th>收款</th>
       </tr></thead>
       <tbody id="pending-orders-body"></tbody>
     </table>
@@ -531,10 +531,10 @@ async function markPaid(id) {
 
 async function loadPendingOrders() {
   const body = document.getElementById('pending-orders-body');
-  body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
   try {
     const list = await call('System.Order.staffOrders', { status: 'paid' });
-    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无待打包订单（要先在「待收款」里确认收款）</td></tr>'; return; }
+    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无待打包订单（要先在「待收款」里确认收款）</td></tr>'; return; }
     body.innerHTML = list.map((o) => `
       <tr>
         <td>${escapeHtml(o.order_no)}</td>
@@ -548,9 +548,21 @@ async function loadPendingOrders() {
             <button onclick="markShipped(${o.id})">标记发货</button>
           </div>
         </td>
+        <td>
+          <div class="muted">${escapeHtml(o.paid_at ? o.paid_at.slice(0, 16).replace('T', ' ') : '')}</div>
+          <button onclick="revertPaid(${o.id})">撤回收款</button>
+        </td>
       </tr>
     `).join('');
-  } catch (e) { body.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>'; }
+  } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }
+}
+
+// 收款点错了要能改回去——不撤回的话仓库就会把一单没收到钱的货发出去。
+async function revertPaid(id) {
+  if (!confirm('撤回这一单的收款记录？撤回后它会回到「待收款」，仓库发不了货。')) return;
+  await call('System.Order.revertPaid', { id });
+  toast('已撤回收款');
+  loadPendingOrders();
 }
 
 async function markShipped(id) {

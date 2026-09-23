@@ -12,6 +12,8 @@ function call(method, params = {}) {
       method: 'POST',
       data: { method, params, token },
       header: { 'content-type': 'application/json' },
+      // 默认 60 秒太久了，网络不好时用户会以为小程序卡死。
+      timeout: 15000,
       success(res) {
         const body = res.data || {};
         if (body.code === 0) {

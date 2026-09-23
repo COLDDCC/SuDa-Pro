@@ -1,15 +1,18 @@
 <view class="container">
   <view class="card" style="margin-top: 120rpx; text-align: center;">
-    <view style="font-size: 40rpx; font-weight: 700; margin-bottom: 12rpx;">XX转运Pro</view>
-    <view class="muted">把日本买的东西，安心带回家</view>
+    <view style="font-size: 40rpx; font-weight: 700; margin-bottom: 12rpx;">{{siteName}}</view>
+    <view class="muted">{{siteSlogan}}</view>
   </view>
 
-  <view class="card">
+  <view class="card" wx:if="{{ready}}">
     <button class="btn-primary" bindtap="onWechatLogin">微信一键登录</button>
   </view>
 
-  <view class="card">
-    <view class="section-title">本地联调登录（无需微信凭证）</view>
+  <!-- 本地联调登录：只在后端没配微信凭证时出现。配了之后它会被后端禁用，
+       留着按钮用户点了只会看到一条看不懂的报错。 -->
+  <view class="card" wx:if="{{ready && !wechatLogin}}">
+    <view class="section-title">本地联调登录</view>
+    <view class="muted" style="margin-bottom: 16rpx;">后端还没配微信凭证，先用这个把流程跑通</view>
     <input class="input" placeholder="随便填个用户名" value="{{devIdentifier}}" bindinput="onDevIdentifierInput" />
     <button class="btn-outline" bindtap="onDevLogin">测试登录</button>
   </view>
