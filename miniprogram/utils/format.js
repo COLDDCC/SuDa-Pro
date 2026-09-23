@@ -1,7 +1,8 @@
 const PACKAGE_STATUS = {
   pending: { text: '待入库', cls: 'tag-pending' },
   inbound: { text: '已入库', cls: 'tag-inbound' },
-  ordered: { text: '待发货', cls: 'tag-ordered' },
+  // 订单可能还在待付款，从包裹角度说「已下单」才准确
+  ordered: { text: '已下单', cls: 'tag-ordered' },
   shipped: { text: '已发货', cls: 'tag-shipped' },
   cancelled: { text: '已取消', cls: 'tag-cancelled' },
 };

@@ -6,7 +6,7 @@ const TABS = [
   { key: '', label: '全部' },
   { key: 'pending', label: '待入库' },
   { key: 'inbound', label: '已入库' },
-  { key: 'ordered', label: '待发货' },
+  { key: 'ordered', label: '已下单' },
   { key: 'shipped', label: '已发货' },
 ];
 

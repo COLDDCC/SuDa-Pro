@@ -1,9 +1,13 @@
 const { call } = require('../../utils/request.js');
 const { orderStatus } = require('../../utils/format.js');
 
+// 和后端的订单状态一一对应。运费线下收，下单后第一站是「待付款」——
+// 之前这里把 pending 标成「待发货」，用户点进去看到的其实是等他付钱的单，
+// 而「已付款待打包」压根没有入口。
 const TABS = [
   { key: '', label: '全部' },
-  { key: 'pending', label: '待发货' },
+  { key: 'pending', label: '待付款' },
+  { key: 'paid', label: '待打包' },
   { key: 'shipped', label: '运输中' },
   { key: 'signed', label: '已签收' },
   { key: 'closed', label: '已关闭' },

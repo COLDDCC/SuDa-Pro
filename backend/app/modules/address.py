@@ -5,14 +5,28 @@ from ..errors import ApiError
 from .. import models, regions
 
 
+# 运费计算器的重量上限。不设的话 "1e400"、400 位数字这类输入会一路漏到
+# 乘法和 quantize 里炸成 500，用户只看到"服务器内部错误"。
+MAX_WEIGHT = Decimal("10000")
+
+
 def _to_decimal(value):
-    """转不了就返回 None，交给调用方报错——不能让 Decimal() 直接炸成 500。"""
+    """转不了就返回 None，交给调用方报错——不能让 Decimal() 直接炸成 500。
+
+    NaN 和 Infinity 要单独挡：Decimal("NaN") 是**合法**的不会抛异常，
+    但它和任何数比较都是 False，一路漏到下游才炸。
+    """
     if value in (None, ""):
         return None
+    if isinstance(value, bool) or not isinstance(value, (int, str, float)):
+        return None
     try:
-        return Decimal(str(value))
+        d = Decimal(str(value))
     except Exception:
         return None
+    if not d.is_finite() or abs(d) > MAX_WEIGHT:
+        return None
+    return d
 
 
 def province(db, member, params):
@@ -74,7 +88,7 @@ def estimateFee(db, member, params):
     """
     weight = _to_decimal(params.get("weight"))
     if weight is None:
-        raise ApiError("重量格式不正确")
+        raise ApiError(f"重量格式不正确（请填 0 到 {MAX_WEIGHT}kg 之间的数字）")
     if weight <= 0:
         raise ApiError("请输入有效的重量")
 

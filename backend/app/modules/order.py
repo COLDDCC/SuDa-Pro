@@ -17,24 +17,66 @@ def _require_staff(params):
         raise ApiError("无权限执行该操作", code=403)
 
 
-def _to_int(value, default, field_name):
+# 数值上限。超过这些的一定是填错了或者在故意试探，而不加限制的话：
+# Decimal 会把 "NaN"/"Infinity"/400 位数字都当合法值收下，后面一做运算或者
+# 存库就炸成 500，用户只看到一句"服务器内部错误"。
+MAX_WEIGHT = Decimal("10000")      # kg
+MAX_MONEY = Decimal("10000000")    # 元
+MAX_COUNT = 100000
+MAX_PAGE = 1000000
+
+
+def _to_int(value, default, field_name, max_value=MAX_COUNT):
     if value in (None, ""):
         return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool) or not isinstance(value, (int, str, float)):
         raise ApiError(f"{field_name}格式不正确")
+    try:
+        n = int(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ApiError(f"{field_name}格式不正确")
+    if abs(n) > max_value:
+        raise ApiError(f"{field_name}超出合理范围")
+    return n
 
 
-def _to_decimal(value, default, field_name):
-    # default 允许是 None，表示"这个字段没传就是没传"，由调用方决定要不要报错。
-    # 这里不能无脑 Decimal(default)——Decimal(None) 会直接抛 TypeError 变成 500。
+def _to_decimal(value, default, field_name, max_value=None):
+    """转成 Decimal。
+
+    default 允许是 None，表示"这个字段没传就是没传"，由调用方决定要不要报错。
+    这里不能无脑 Decimal(default)——Decimal(None) 会直接抛 TypeError 变成 500。
+
+    还要挡住 NaN 和 Infinity：Decimal("NaN") 是**合法**的，不会抛异常，但它和
+    任何数比较都是 False，一路漏到下游再炸，排查起来很费劲。
+    """
     if value in (None, ""):
         return None if default is None else Decimal(default)
+    if isinstance(value, bool) or not isinstance(value, (int, str, float)):
+        raise ApiError(f"{field_name}格式不正确")
     try:
-        return Decimal(str(value))
+        d = Decimal(str(value))
     except Exception:
         raise ApiError(f"{field_name}格式不正确")
+    if not d.is_finite():
+        raise ApiError(f"{field_name}不是一个有效的数字")
+    if max_value is not None and abs(d) > max_value:
+        raise ApiError(f"{field_name}超出合理范围（上限 {max_value}）")
+    return d
+
+
+def _text(value, field_name, max_len, required=False):
+    """文本字段。SQLite 不强制列长度，什么都能塞进去——一万字的品名会把后台页面
+    撑爆，而且换成 MySQL 之后同样的数据会直接插入失败。在入口就截住。"""
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ApiError(f"{field_name}格式不正确")
+    value = value.strip()
+    if required and not value:
+        raise ApiError(f"请填写{field_name}")
+    if len(value) > max_len:
+        raise ApiError(f"{field_name}太长了（最多 {max_len} 个字）")
+    return value
 
 
 # ---- 预报 / 包裹(竞品叫"商品" goods，其实就是包裹里的物品) ----
@@ -92,12 +134,9 @@ def parseTrackingText(db, member, params):
 
 def addforecast(db, member, params):
     """包裹预报 — 核心接口。用户告诉我们"有个包裹要来了"。"""
-    express_num = params.get("express_num") or params.get("way")
-    good_name = params.get("good_name")
-    if not express_num:
-        raise ApiError("请填写快递单号")
-    if not good_name:
-        raise ApiError("请填写品名")
+    express_num = _text(params.get("express_num") or params.get("way"),
+                        "快递单号", 64, required=True)
+    good_name = _text(params.get("good_name"), "品名", 128, required=True)
 
     # 同一个单号重复预报：用户以为上次没成功，又填了一遍。放过去的话仓库会看到
     # 两条一模一样的记录，不知道该入库哪个。
@@ -110,10 +149,10 @@ def addforecast(db, member, params):
         raise ApiError(f"这个单号你已经预报过了（{dup.good_name}），不用重复提交")
 
     count = _to_int(params.get("count"), 1, "数量")
-    netwt = _to_decimal(params.get("netwt"), "0", "净重")
-    price = _to_decimal(params.get("price"), "0", "商品价值")
-    cc_registered_price = _to_decimal(params.get("cc_registered_price"), "0", "海关申报价值")
-    export_unit_price = _to_decimal(params.get("export_unit_price"), "0", "出口单价")
+    netwt = _to_decimal(params.get("netwt"), "0", "净重", MAX_WEIGHT)
+    price = _to_decimal(params.get("price"), "0", "商品价值", MAX_MONEY)
+    cc_registered_price = _to_decimal(params.get("cc_registered_price"), "0", "海关申报价值", MAX_MONEY)
+    export_unit_price = _to_decimal(params.get("export_unit_price"), "0", "出口单价", MAX_MONEY)
 
     # 净重直接决定运费怎么算（savePage 里按选中包裹的净重总和计费）：一个负数
     # "包裹"就能把别的真实包裹的重量抵消掉，相当于免费搭车。数量/价值同理不能为负。
@@ -130,10 +169,10 @@ def addforecast(db, member, params):
         count=count,
         netwt=netwt,
         price=price,
-        bar_code=params.get("bar_code", ""),
-        brand_name_cn=params.get("brand_name_cn", ""),
-        category=params.get("category", ""),
-        spec=params.get("spec", ""),
+        bar_code=_text(params.get("bar_code"), "条码", 64),
+        brand_name_cn=_text(params.get("brand_name_cn"), "品牌", 64),
+        category=_text(params.get("category"), "分类", 64),
+        spec=_text(params.get("spec"), "规格", 64),
         cc_registered_price=cc_registered_price,
         export_unit_price=export_unit_price,
         is_second_goods=bool(params.get("is_second_goods", False)),
@@ -153,7 +192,7 @@ def addforecast(db, member, params):
 def goodsList(db, member, params):
     """我的包裹列表，可按状态筛选: pending/inbound/ordered/shipped/cancelled"""
     q = db.query(models.Package).filter_by(member_id=member.id)
-    status = params.get("status")
+    status = _text(params.get("status"), "状态", 32)
     if status:
         q = q.filter_by(status=status)
     rows = q.order_by(models.Package.id.desc()).all()
@@ -205,7 +244,7 @@ def markInbound(db, member, params):
     _require_staff(params)
     goods_id = params.get("goods_id") or params.get("id")
 
-    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量")
+    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量", MAX_WEIGHT)
     if actual_weight is None:
         raise ApiError("请录入实际称重（运费按这个重量算）")
     if actual_weight <= 0:
@@ -230,7 +269,7 @@ def reweigh(db, member, params):
     进了订单再改重量，用户看到的报价就和实际扣的钱对不上了。"""
     _require_staff(params)
     goods_id = params.get("goods_id") or params.get("id")
-    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量")
+    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量", MAX_WEIGHT)
     if actual_weight is None or actual_weight <= 0:
         raise ApiError("请录入有效的实际重量")
 
@@ -357,7 +396,7 @@ def staffPendingPackages(db, member, params):
 def staffOrders(db, member, params):
     """给后台管理页用：按状态查所有会员的订单（客户端的 order 只能看自己的）。"""
     _require_staff(params)
-    status = params.get("status", "pending")
+    status = _text(params.get("status"), "状态", 32) or "pending"
     rows = db.query(models.Order).filter_by(status=status).order_by(models.Order.id.desc()).all()
     return [{
         **_order_summary(o),
@@ -390,21 +429,18 @@ def _unclaimed_dict(u: models.UnclaimedPackage):
 def registerUnclaimed(db, member, params):
     """仓库登记一个没人认领的包裹。"""
     _require_staff(params)
-    express_num = params.get("express_num")
-    if not express_num:
-        raise ApiError("请填写快递单号")
-
-    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量")
+    express_num = _text(params.get("express_num"), "快递单号", 64, required=True)
+    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量", MAX_WEIGHT)
     if actual_weight is not None and actual_weight <= 0:
         raise ApiError("实际重量必须大于 0")
 
     u = models.UnclaimedPackage(
         shop_id=params.get("shop_id", 1),
         express_num=express_num,
-        good_name=params.get("good_name", ""),
+        good_name=_text(params.get("good_name"), "品名", 128),
         actual_weight=actual_weight,
-        note=params.get("note", ""),
-        photo_url=params.get("photo_url", ""),
+        note=_text(params.get("note"), "备注", 255),
+        photo_url=_text(params.get("photo_url"), "图片地址", 255),
     )
     db.add(u)
     db.commit()
@@ -470,9 +506,7 @@ def claimPackage(db, member, params):
 
     要求填完整单号（不是从列表里点一下就认领），是为了确认他真的知道这个单号。
     """
-    express_num = (params.get("express_num") or "").strip()
-    if not express_num:
-        raise ApiError("请填写完整的快递单号")
+    express_num = _text(params.get("express_num"), "快递单号", 64, required=True)
 
     u = db.query(models.UnclaimedPackage).filter_by(
         express_num=express_num, claimed_by=None,
@@ -735,7 +769,7 @@ def savePage(db, member, params):
                            f"{address.district_name}{address.address}"),
         line_id=line.id,
         shop_id=params.get("shop_id", 1),
-        remark=params.get("remark", ""),
+        remark=_text(params.get("remark"), "备注", 500),
         status=models.Order.STATUS_PENDING,
         total_weight=total_weight,
         total_fee=total_fee,
@@ -820,14 +854,16 @@ def _order_summary(o: models.Order):
 def order(db, member, params):
     """订单列表"""
     q = db.query(models.Order).filter_by(member_id=member.id)
-    status = params.get("status")
+    status = _text(params.get("status"), "状态", 32)
     if status:
         q = q.filter_by(status=status)
-    keyword = params.get("keyword")
+    keyword = _text(params.get("keyword"), "关键词", 64)
     if keyword:
         q = q.filter(models.Order.order_no.contains(keyword))
-    page = max(_to_int(params.get("page"), 1, "page"), 1)
-    page_size = min(max(_to_int(params.get("page_size"), 10, "page_size"), 1), 100)
+    page = max(_to_int(params.get("page"), 1, "页码", MAX_PAGE), 1)
+    # 能解析出来的就收进 1..100，不报错——客户端传个 99999 只是写得糙，
+    # 没必要让用户看到报错。真正离谱的（几十位数字）才会在 _to_int 里被挡下。
+    page_size = min(max(_to_int(params.get("page_size"), 10, "每页条数", MAX_PAGE), 1), 100)
     total = q.count()
     rows = q.order_by(models.Order.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "page": page, "list": [_order_summary(o) for o in rows]}
@@ -1037,8 +1073,7 @@ def addTrack(db, member, params):
     _require_staff(params)
     order_id = params.get("order_id") or params.get("id")
     status_text = params.get("status_text")
-    if not status_text:
-        raise ApiError("请填写轨迹内容")
+    status_text = _text(status_text, "轨迹内容", 255, required=True)
 
     o = db.query(models.Order).filter_by(id=order_id).first()
     if not o:
