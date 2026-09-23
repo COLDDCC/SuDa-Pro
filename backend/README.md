@@ -15,6 +15,46 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8811
 
 首次启动会自动建表并写入种子数据（日本仓地址、3 条物流线路、一条公告）。
 
+## 测试
+
+```bash
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+88 个用例，跑完不到 1 秒，不需要另外起服务进程（用 FastAPI 的 TestClient 直接在进程内调）。
+覆盖：MVP 主线全流程、跨会员越权（看不到/改不了/下不了别人的单）、staff_key 校验、
+输入校验（负重量、类型混淆、脏分页）、单号识别、生产配置自检。
+
+`scripts/smoke_test.py` 还在，它打的是真实 HTTP 端口，用来确认**部署后**的服务是通的；
+pytest 用来确认**代码本身**是对的，两者不重复。
+
+## 环境变量一览
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `APP_ENV` | `dev` | 设为 `production` 时启用启动配置自检（见下） |
+| `DATABASE_URL` | `sqlite:///backend/suda.db` | 换 MySQL/Postgres 只改这里，代码不用动 |
+| `JWT_SECRET` | `dev-secret-change-me` | 签发登录 token。**上线必须换** |
+| `JWT_EXPIRE_DAYS` | `30` | token 有效期 |
+| `WX_APPID` / `WX_SECRET` | 空 | 微信小程序凭证，配齐后 `devLogin` 自动禁用 |
+| `STAFF_KEY` | 空 | 仓库/客服操作的共享密钥（见下） |
+| `ALLOWED_ORIGINS` | `*` | 跨域白名单，逗号分隔。小程序不受同源策略约束，默认放开 |
+
+## 生产环境配置自检
+
+设了 `APP_ENV=production` 之后，启动时会检查三件事，任何一项不合格**直接拒绝启动**，
+并在报错里说清楚为什么、怎么改：
+
+1. `JWT_SECRET` 不能是默认值、不能短于 24 位 —— 默认值是公开写在代码里的，
+   拿它能签出任意用户的 token
+2. `STAFF_KEY` 必须设置、不能短于 24 位 —— 没有它仓库端全部操作失效，订单卡死
+3. `WX_APPID` / `WX_SECRET` 必须配齐 —— 少一个 `devLogin` 就还开着，
+   填个用户名就能登录，等于线上留后门
+
+这三种情况都属于"不报错但已经出事"，所以宁可让进程起不来。本地开发（`APP_ENV` 不设或设 `dev`）
+完全不受影响。
+
 ## 微信登录配置
 
 真机联调需要设置环境变量：

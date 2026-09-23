@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
+from .config import ALLOWED_ORIGINS, check_production_config
 from .database import Base, engine, get_db
 from .router import resolve, MethodNotFound
 from .errors import ApiError
@@ -14,13 +15,17 @@ from . import seed
 
 logger = logging.getLogger("suda")
 
+# 配置自检放在建表之前：生产环境配置不合格就让进程直接起不来，
+# 而不是带着默认密钥跑起来等出事。
+check_production_config()
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="XX转运Pro API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

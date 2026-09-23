@@ -7,9 +7,12 @@
 ## 目录结构
 
 ```
-backend/       FastAPI + SQLite 后端，方法名路由 (POST /api {method, params, token})
-miniprogram/   微信小程序原生前端，10 个页面覆盖 MVP 全流程
-docs/plan.md   项目计划书 + 竞品接口清单
+backend/        FastAPI + SQLite 后端，方法名路由 (POST /api {method, params, token})
+backend/tests/  pytest 测试套件（88 个用例，不用起服务进程）
+miniprogram/    微信小程序原生前端，10 个页面覆盖 MVP 全流程
+deploy/         一台服务器 + 一个域名就能上线的 docker compose 配置
+docs/plan.md    项目计划书 + 竞品接口清单
+docs/deploy.md  上线手册：买服务器 → 配域名 → HTTPS → 小程序提审
 ```
 
 ## 快速开始
@@ -38,6 +41,14 @@ STAFF_KEY=你在第1步设置的那个值 python3 scripts/smoke_test.py
 
 看到最后一行 `[PASS] 全流程走通了` 就说明后端没问题。
 
+也可以直接跑测试套件（不用另外起服务进程，更快，CI 上跑的就是它）：
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
 仓库/客服那几个操作（标记入库、标记发货、追加轨迹）现在也有一个网页可以点，不用背
 接口参数：浏览器打开 `http://127.0.0.1:8811/admin/`，填入 `STAFF_KEY` 保存，
 就能看到"待入库包裹 / 待发货订单 / 运输中订单"三个 tab 直接操作。
@@ -58,6 +69,17 @@ STAFF_KEY=你在第1步设置的那个值 python3 scripts/smoke_test.py
 去下单发货，选地址（没有就新增，身份证号必填，报关要用）→ 选线路提交 →
 去 `http://127.0.0.1:8811/admin/` 把这个包裹标记入库、把这个订单标记发货 →
 回小程序订单详情，能看到物流轨迹和国际转运单号了。
+
+## 上线
+
+本地跑通之后，按 [`docs/deploy.md`](docs/deploy.md) 部署到服务器：一台最低配轻量云
++ 一个域名，`docker compose up -d` 起两个容器（后端 + Caddy 自动 HTTPS），
+因为微信小程序只允许请求 HTTPS 域名，这一步绕不过去。
+
+生产环境（`APP_ENV=production`）启动时会做配置自检，`JWT_SECRET` 还是默认值、
+`STAFF_KEY` 没设、微信凭证没配齐（这三种情况分别等于"谁都能伪造登录"、"仓库操作全部失效"、
+"devLogin 后门还开着"）都会**直接拒绝启动**并告诉你怎么改——带着默认密钥安静地跑起来，
+比起不来危险得多。本地开发不受影响。
 
 ## MVP 范围
 

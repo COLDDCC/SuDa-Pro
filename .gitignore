@@ -12,3 +12,10 @@ backend/*.db-journal
 
 # Misc
 .DS_Store
+
+# Deployment secrets — 真实密钥绝对不能进版本库
+deploy/.env
+.env
+
+# pytest
+.pytest_cache/
