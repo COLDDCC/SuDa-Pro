@@ -80,6 +80,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 | `JWT_SECRET` | 刚生成的第一个随机串 | 泄露 = 任何人可伪造任意用户登录 |
 | `STAFF_KEY` | 刚生成的第二个随机串 | 泄露 = 别人能乱改订单状态 |
 | `WX_APPID` / `WX_SECRET` | 微信公众平台 → 开发管理 → 开发设置 | 不填就起不来（见第 5 节） |
+| `PHOTO_SERVICE_FEE` | 入库拍照服务费（人民币元/包裹），默认 `2.50` | 收错钱 |
 | `ADMIN_ALLOWED_IPS` | 你自己的固定公网 IP；没有就填 `0.0.0.0/0 ::/0` | 填窄了自己打不开后台 |
 
 > `.env` 里全是密钥，**已经在 `.gitignore` 里了，不要提交到 git**。
@@ -162,6 +163,17 @@ const BASE_URL = 'https://api.你的域名.com';
 这个页面有两层保护：来源 IP 白名单（`ADMIN_ALLOWED_IPS`）+ 共享密钥（`STAFF_KEY`）。
 目前还没有员工账号体系，所以**这个密钥等同于仓库的全部权限**，只发给真正要操作的人。
 
+四个 tab 对应仓库的四件事：
+
+| Tab | 干什么 |
+|---|---|
+| 待入库包裹 | 包裹到仓后**称重**入库（重量必填，运费按它算）、补传照片 |
+| 待拍照 | 客户付费申请了入库拍照、还没拍的包裹。拍完才计费 |
+| 待发货订单 | 打包、拍留底照、填国际转运单号标记发货 |
+| 运输中订单 | 给在途订单追加物流轨迹节点 |
+
+照片直接在页面上选文件上传，手机浏览器打开这个页面可以直接调摄像头拍。
+
 ## 8. 日常运维
 
 ```bash
@@ -173,11 +185,17 @@ git pull && docker compose up -d --build
 
 # 备份数据库（订单和用户数据都在里面，建议做个每日定时任务）
 docker compose cp api:/data/suda.db ./backup-$(date +%F).db
+
+# 备份包裹照片（打包留底照是出纠纷时的证据，别只备份数据库）
+docker compose cp api:/data/uploads ./photos-backup-$(date +%F)
 ```
 
-> 数据库是 SQLite，存在名为 `api-data` 的 docker volume 里。
+> 数据库和包裹照片都在名为 `api-data` 的 docker volume 里（容器内的 `/data`）。
 > `docker compose down` 不会删它，但 `docker compose down -v` **会连数据一起删掉**，
 > 别手滑。
+
+> 照片会越攒越多，留意磁盘。`du -sh` 看一眼：
+> `docker compose exec api du -sh /data/uploads`
 
 ## 9. 什么时候该升级
 

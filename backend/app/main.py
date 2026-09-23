@@ -1,12 +1,17 @@
+import hmac
 import logging
 import os
+import uuid
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from .config import ALLOWED_ORIGINS, check_production_config
+from .config import (
+    ALLOWED_ORIGINS, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, STAFF_KEY,
+    UPLOAD_DIR, UPLOAD_URL_PREFIX, check_production_config,
+)
 from .database import Base, engine, get_db
 from .router import resolve, MethodNotFound
 from .errors import ApiError
@@ -34,6 +39,42 @@ app.add_middleware(
 # 纯静态页面 + staff_key，方便在没有专门后台系统前先用起来。
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/admin", StaticFiles(directory=os.path.join(_STATIC_DIR, "admin"), html=True), name="admin")
+
+# 包裹照片。存本地磁盘，按 URL 直接读。生产环境 UPLOAD_DIR 落在挂载卷上，
+# 重新部署照片不会丢（见 deploy/docker-compose.yml 的 /data 卷）。
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount(UPLOAD_URL_PREFIX, StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...), staff_key: str = Form("")):
+    """仓库上传包裹照片。
+
+    图片是 multipart，塞不进 /api 那套 {method, params} 的 JSON 里，所以单开一个
+    端点。权限和其他仓库操作一样用 staff_key（拍照是仓库的活，不是用户的）。
+
+    返回的 url 拿去调 System.Order.addPackagePhoto 挂到具体包裹上。
+    """
+    if not STAFF_KEY or not hmac.compare_digest(staff_key or "", STAFF_KEY):
+        return {"code": 403, "msg": "无权限执行该操作", "data": None}
+
+    ext = ALLOWED_IMAGE_TYPES.get((file.content_type or "").lower())
+    if ext is None:
+        return {"code": 400, "msg": "只支持 JPG / PNG / WebP 图片", "data": None}
+
+    # 一次读完但先看大小：手机直出照片动辄十几 MB，不设上限的话磁盘很快被塞满。
+    body = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(body) > MAX_UPLOAD_BYTES:
+        return {"code": 400, "msg": f"图片太大了（上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB）", "data": None}
+    if not body:
+        return {"code": 400, "msg": "图片是空的", "data": None}
+
+    # 文件名自己生成，绝不用客户端传来的 filename —— 那里面可能带 ../ 跑出目录。
+    name = f"{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, name), "wb") as f:
+        f.write(body)
+
+    return {"code": 0, "msg": "ok", "data": {"url": f"{UPLOAD_URL_PREFIX}/{name}"}}
 
 
 @app.on_event("startup")

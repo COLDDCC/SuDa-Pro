@@ -4,6 +4,7 @@
 直接 import 成了模块级常量），所以这些环境变量必须在任何 app.* 被导入之前设好，
 放在 conftest 顶层就是为了这个 —— pytest 会先加载 conftest 再加载测试模块。
 """
+import io
 import os
 import tempfile
 import uuid
@@ -107,8 +108,12 @@ def line_id(line):
 
 @pytest.fixture
 def make_package(api, token):
-    """建一个包裹，可选直接推进到已入库。返回包裹 dict。"""
-    def _make(netwt="2.0", inbound=False, **kw):
+    """建一个包裹，可选直接推进到已入库（入库必须称重）。返回包裹 dict。
+
+    netwt 是用户预报时自己填的重量，actual_weight 是仓库称的。计费只认后者，
+    所以默认让两者不一样，免得测试在"用错了字段"的情况下照样通过。
+    """
+    def _make(netwt="2.0", inbound=False, actual_weight=None, **kw):
         pkg = api.ok("System.Order.addforecast", {
             "express_num": f"TEST{uuid.uuid4().hex[:10].upper()}",
             "good_name": "测试商品",
@@ -117,6 +122,45 @@ def make_package(api, token):
             **kw,
         }, token)
         if inbound:
-            api.ok("System.Order.markInbound", {"goods_id": pkg["id"], "staff_key": STAFF_KEY})
+            pkg = api.ok("System.Order.markInbound", {
+                "goods_id": pkg["id"],
+                "actual_weight": actual_weight if actual_weight is not None else netwt,
+                "staff_key": STAFF_KEY,
+            })
         return pkg
+    return _make
+
+
+def png_bytes():
+    """一张最小的合法 PNG，上传测试用。"""
+    return (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+            b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01'
+            b'\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82')
+
+
+_UNSET = object()
+
+
+@pytest.fixture
+def upload(api):
+    """POST /upload。content 显式传 b"" 时就真的传空文件，不要被默认值顶掉。"""
+    def _upload(content=_UNSET, filename="photo.png", content_type="image/png", staff_key=STAFF_KEY):
+        body = png_bytes() if content is _UNSET else content
+        return api.client.post(
+            "/upload",
+            files={"file": (filename, io.BytesIO(body), content_type)},
+            data={"staff_key": staff_key},
+        ).json()
+    return _upload
+
+
+@pytest.fixture
+def photographed_package(api, make_package, upload):
+    """一个申请了拍照、并且仓库确实拍了的已入库包裹。"""
+    def _make(**kw):
+        pkg = make_package(inbound=True, photo_requested=True, **kw)
+        url = upload()["data"]["url"]
+        return api.ok("System.Order.addPackagePhoto", {
+            "goods_id": pkg["id"], "url": url, "kind": "inbound", "staff_key": STAFF_KEY,
+        })
     return _make

@@ -2,7 +2,7 @@
 import hmac
 from decimal import Decimal, ROUND_UP
 
-from ..config import STAFF_KEY
+from ..config import STAFF_KEY, PHOTO_SERVICE_FEE
 from ..errors import ApiError
 from .. import models
 from .. import tracking
@@ -26,8 +26,10 @@ def _to_int(value, default, field_name):
 
 
 def _to_decimal(value, default, field_name):
+    # default 允许是 None，表示"这个字段没传就是没传"，由调用方决定要不要报错。
+    # 这里不能无脑 Decimal(default)——Decimal(None) 会直接抛 TypeError 变成 500。
     if value in (None, ""):
-        return Decimal(default)
+        return None if default is None else Decimal(default)
     try:
         return Decimal(str(value))
     except Exception:
@@ -61,6 +63,15 @@ def _pkg_dict(p: models.Package):
         "status": p.status,
         "created_at": p.created_at.isoformat(),
         "inbound_at": p.inbound_at.isoformat() if p.inbound_at else None,
+        # netwt 是用户自己填的，仅供参考；actual_weight 才是仓库称的、用来算钱的。
+        # 两个都给前端，让用户看得见差异，少一些"为什么比我算的贵"的客服工单。
+        "actual_weight": str(p.actual_weight) if p.actual_weight is not None else None,
+        "weighed_at": p.weighed_at.isoformat() if p.weighed_at else None,
+        "photo_requested": bool(p.photo_requested),
+        "photos": [{
+            "id": ph.id, "kind": ph.kind, "url": ph.url, "note": ph.note,
+            "created_at": ph.created_at.isoformat(),
+        } for ph in sorted(p.photos, key=lambda x: x.id)],
     }
 
 
@@ -117,6 +128,11 @@ def addforecast(db, member, params):
         is_second_goods=bool(params.get("is_second_goods", False)),
         status=models.Package.STATUS_PENDING,
     )
+    # 拍照是收费服务，预报时就能勾上，仓库入库时照做。到仓后再补申请也行，
+    # 走的是下面的 requestPhoto。
+    if params.get("photo_requested"):
+        p.photo_requested = True
+        p.photo_requested_at = models.now()
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -170,18 +186,147 @@ def delectGood(db, member, params):
 
 
 def markInbound(db, member, params):
-    """仓库人员标记包裹已入库。不挂会员 token，用 staff_key 校验（见 _require_staff）。"""
+    """仓库人员标记包裹已入库，同时**必须**录入实际称重。
+
+    称重是强制的：运费按重量算，而用户预报时填的 netwt 是他自己拍脑袋写的，
+    拿那个数收钱等于谁填得小谁占便宜。所以入库这一步不称重就不让过。
+    """
     _require_staff(params)
     goods_id = params.get("goods_id") or params.get("id")
+
+    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量")
+    if actual_weight is None:
+        raise ApiError("请录入实际称重（运费按这个重量算）")
+    if actual_weight <= 0:
+        raise ApiError("实际重量必须大于 0")
+
     p = db.query(models.Package).filter_by(id=goods_id).first()
     if not p:
         raise ApiError("包裹不存在")
     if p.status != models.Package.STATUS_PENDING:
         raise ApiError("包裹当前状态不是待入库")
+
     p.status = models.Package.STATUS_INBOUND
     p.inbound_at = models.now()
+    p.actual_weight = actual_weight
+    p.weighed_at = models.now()
     db.commit()
     return _pkg_dict(p)
+
+
+def reweigh(db, member, params):
+    """仓库改称重。称错了要能改，但只能在包裹进订单之前——
+    进了订单再改重量，用户看到的报价就和实际扣的钱对不上了。"""
+    _require_staff(params)
+    goods_id = params.get("goods_id") or params.get("id")
+    actual_weight = _to_decimal(params.get("actual_weight"), None, "实际重量")
+    if actual_weight is None or actual_weight <= 0:
+        raise ApiError("请录入有效的实际重量")
+
+    p = db.query(models.Package).filter_by(id=goods_id).first()
+    if not p:
+        raise ApiError("包裹不存在")
+    if p.status != models.Package.STATUS_INBOUND:
+        raise ApiError("只有已入库、还没进订单的包裹可以改称重")
+
+    p.actual_weight = actual_weight
+    p.weighed_at = models.now()
+    db.commit()
+    return _pkg_dict(p)
+
+
+# ---- 拍照服务 ----
+
+def requestPhoto(db, member, params):
+    """用户在包裹到仓后补申请拍照。预报时勾选是另一条路（见 addforecast）。"""
+    goods_id = params.get("goods_id") or params.get("id")
+    p = db.query(models.Package).filter_by(id=goods_id, member_id=member.id).first()
+    if not p:
+        raise ApiError("包裹不存在")
+    if p.status in (models.Package.STATUS_ORDERED, models.Package.STATUS_SHIPPED):
+        raise ApiError("包裹已在订单中，来不及拍照了")
+    if p.photo_requested:
+        return _pkg_dict(p)
+    p.photo_requested = True
+    p.photo_requested_at = models.now()
+    db.commit()
+    return _pkg_dict(p)
+
+
+def cancelPhotoRequest(db, member, params):
+    """还没拍就能取消，拍了就不能取消了（服务已经发生）。"""
+    goods_id = params.get("goods_id") or params.get("id")
+    p = db.query(models.Package).filter_by(id=goods_id, member_id=member.id).first()
+    if not p:
+        raise ApiError("包裹不存在")
+    if p.has_inbound_photos:
+        raise ApiError("仓库已经拍好了，没法取消")
+    p.photo_requested = False
+    p.photo_requested_at = None
+    db.commit()
+    return _pkg_dict(p)
+
+
+def photoServiceInfo(db, member, params):
+    """拍照服务的价格，前端展示用（预报页那个勾选框要写清楚多少钱）。"""
+    return {"fee": str(Decimal(PHOTO_SERVICE_FEE)), "currency": "CNY", "unit": "每个包裹"}
+
+
+def staffPhotoTasks(db, member, params):
+    """仓库待办：用户申请了拍照、但还没拍的包裹。"""
+    _require_staff(params)
+    rows = db.query(models.Package).filter(
+        models.Package.photo_requested.is_(True),
+        models.Package.status.in_([models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND]),
+    ).order_by(models.Package.id.desc()).all()
+    pending = [p for p in rows if not p.has_inbound_photos]
+    return [{
+        **_pkg_dict(p),
+        "member_id": p.member_id,
+        "member_nickname": p.member.nickname,
+        "member_mobile": p.member.mobile,
+    } for p in pending]
+
+
+def addPackagePhoto(db, member, params):
+    """仓库把上传好的照片挂到包裹上。
+
+    图片本身走 POST /upload 上传（multipart），那个接口返回 url，再调这里登记。
+    kind: inbound=入库拍照(收费服务) / packing=打包留底(不收费，出纠纷时自证用)
+    """
+    _require_staff(params)
+    goods_id = params.get("goods_id") or params.get("id")
+    url = params.get("url")
+    kind = params.get("kind", models.PackagePhoto.KIND_INBOUND)
+    if not url:
+        raise ApiError("缺少图片地址")
+    if kind not in (models.PackagePhoto.KIND_INBOUND, models.PackagePhoto.KIND_PACKING):
+        raise ApiError("照片类型不正确")
+
+    p = db.query(models.Package).filter_by(id=goods_id).first()
+    if not p:
+        raise ApiError("包裹不存在")
+
+    db.add(models.PackagePhoto(
+        package_id=p.id, kind=kind, url=url, note=params.get("note", ""),
+    ))
+    db.commit()
+    db.refresh(p)
+    return _pkg_dict(p)
+
+
+def deletePackagePhoto(db, member, params):
+    """传错了能删。"""
+    _require_staff(params)
+    photo_id = params.get("photo_id") or params.get("id")
+    ph = db.query(models.PackagePhoto).filter_by(id=photo_id).first()
+    if not ph:
+        raise ApiError("照片不存在")
+    if ph.package.status == models.Package.STATUS_SHIPPED:
+        raise ApiError("包裹已发货，留底照片不能删")
+    db.delete(ph)
+    db.commit()
+    return {"ok": True}
 
 
 def staffPendingPackages(db, member, params):
@@ -224,24 +369,24 @@ def getLine(db, member, params):
     } for l in rows]
 
 
-def savePage(db, member, params):
-    """下单。params: {address_id, line_id, package_ids: [..], remark, shop_id}"""
+def _resolve_order_inputs(db, member, params):
+    """把下单/预览共用的那堆校验抽出来：地址、线路、包裹各自查出来并查权限。"""
     address_id = params.get("address_id")
     line_id = params.get("line_id") or params.get("co_id")
     package_ids = params.get("package_ids") or params.get("goods_ids") or []
 
-    if not address_id:
-        raise ApiError("请选择收件地址")
     if not line_id:
         raise ApiError("请选择物流线路")
     if not isinstance(package_ids, list) or not package_ids:
         raise ApiError("请至少选择一个包裹")
 
-    address = db.query(models.Address).filter_by(id=address_id, member_id=member.id).first()
-    if not address:
-        raise ApiError("收件地址不存在")
-    if not address.idnumber:
-        raise ApiError("该地址缺少实名信息（身份证号），无法用于报关，请先完善")
+    address = None
+    if address_id is not None:
+        address = db.query(models.Address).filter_by(id=address_id, member_id=member.id).first()
+        if not address:
+            raise ApiError("收件地址不存在")
+        if not address.idnumber:
+            raise ApiError("该地址缺少实名信息（身份证号），无法用于报关，请先完善")
 
     line = db.query(models.Line).filter_by(id=line_id, is_active=True).first()
     if not line:
@@ -253,18 +398,91 @@ def savePage(db, member, params):
     ).all()
     if len(packages) != len(package_ids):
         raise ApiError("包裹信息有误")
-    for p in packages:
-        if p.status not in (models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND):
-            raise ApiError(f"包裹 {p.good_name} 状态不允许下单")
 
-    total_weight = sum((p.netwt for p in packages), Decimal("0"))
+    for p in packages:
+        # 只有已入库的包裹能下单。还没到仓的东西既没称重也没法合箱打包，
+        # 让它进订单只会算出一个假的运费。
+        if p.status != models.Package.STATUS_INBOUND:
+            if p.status == models.Package.STATUS_PENDING:
+                raise ApiError(f"包裹「{p.good_name}」还没到仓入库，等仓库签收称重后才能下单")
+            raise ApiError(f"包裹「{p.good_name}」状态不允许下单")
+        if p.billable_weight is None:
+            raise ApiError(f"包裹「{p.good_name}」还没称重，请联系客服")
+
+    return address, line, packages
+
+
+def _compute_fees(line, packages):
+    """算出这一单的重量和费用明细。
+
+    下单和下单前预览走的是同一个函数——报价和实际扣款必须永远是同一个数，
+    否则就是当面一套背后一套。
+    """
+    total_weight = sum((p.billable_weight for p in packages), Decimal("0"))
     billable = max(total_weight, line.min_weight)
-    total_fee = (billable * line.price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_UP)
+    shipping = (billable * line.price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+    fees = [{
+        "fee_type": models.OrderFee.TYPE_SHIPPING,
+        "name": f"运费（{line.name}）",
+        "detail": f"计费重量 {billable}kg × ¥{line.price_per_kg}/kg",
+        "unit_price": line.price_per_kg,
+        "quantity": billable,
+        "amount": shipping,
+    }]
+
+    # 入库拍照按"实际拍了的包裹"收费，不是按"申请了的包裹"收。
+    # 用户申请了但仓库没拍就收钱，属于收了没做的服务，客诉一告一个准。
+    photographed = [p for p in packages if p.has_inbound_photos]
+    if photographed:
+        unit = Decimal(PHOTO_SERVICE_FEE)
+        qty = Decimal(len(photographed))
+        fees.append({
+            "fee_type": models.OrderFee.TYPE_PHOTO,
+            "name": "入库拍照服务",
+            "detail": f"{len(photographed)} 个包裹 × ¥{unit}/个",
+            "unit_price": unit,
+            "quantity": qty,
+            "amount": (unit * qty).quantize(Decimal("0.01"), rounding=ROUND_UP),
+        })
+
+    total_fee = sum((f["amount"] for f in fees), Decimal("0"))
+    return total_weight, fees, total_fee
+
+
+def _fee_dict(f):
+    return {
+        "fee_type": f["fee_type"], "name": f["name"], "detail": f["detail"],
+        "unit_price": str(f["unit_price"]), "quantity": str(f["quantity"]),
+        "amount": str(f["amount"]),
+    }
+
+
+def previewFee(db, member, params):
+    """下单前预览费用明细。下单页在用户点提交之前就把这几条摆出来，
+    省掉"为什么比我想的贵"的客服工单。params 和 savePage 一样，address_id 可以不传。
+    """
+    _, line, packages = _resolve_order_inputs(db, member, params)
+    total_weight, fees, total_fee = _compute_fees(line, packages)
+    return {
+        "total_weight": str(total_weight),
+        "total_fee": str(total_fee),
+        "fees": [_fee_dict(f) for f in fees],
+    }
+
+
+def savePage(db, member, params):
+    """下单。params: {address_id, line_id, package_ids: [..], remark, shop_id}"""
+    if not params.get("address_id"):
+        raise ApiError("请选择收件地址")
+
+    address, line, packages = _resolve_order_inputs(db, member, params)
+    total_weight, fees, total_fee = _compute_fees(line, packages)
 
     order = models.Order(
         member_id=member.id,
-        address_id=address_id,
-        line_id=line_id,
+        address_id=address.id,
+        line_id=line.id,
         shop_id=params.get("shop_id", 1),
         remark=params.get("remark", ""),
         status=models.Order.STATUS_PENDING,
@@ -274,6 +492,9 @@ def savePage(db, member, params):
     db.add(order)
     db.flush()
 
+    for f in fees:
+        db.add(models.OrderFee(order_id=order.id, **f))
+
     for p in packages:
         p.status = models.Package.STATUS_ORDERED
         db.add(models.OrderItem(order_id=order.id, package_id=p.id))
@@ -281,7 +502,12 @@ def savePage(db, member, params):
     db.add(models.OrderTrack(order_id=order.id, status_text="订单已创建，等待安排发货", location="日本仓"))
     db.commit()
     db.refresh(order)
-    return {"order_id": order.id, "order_no": order.order_no, "total_fee": str(order.total_fee)}
+    return {
+        "order_id": order.id,
+        "order_no": order.order_no,
+        "total_fee": str(order.total_fee),
+        "fees": [_fee_dict(f) for f in fees],
+    }
 
 
 def _order_summary(o: models.Order):
@@ -323,6 +549,11 @@ def orderDetail(db, member, params):
     return {
         **_order_summary(o),
         "address": _addr_dict(o.address),
+        "fees": [{
+            "fee_type": f.fee_type, "name": f.name, "detail": f.detail,
+            "unit_price": str(f.unit_price), "quantity": str(f.quantity),
+            "amount": str(f.amount),
+        } for f in sorted(o.fees, key=lambda x: x.id)],
         "packages": [_pkg_dict(i.package) for i in o.items],
         "tracks": [{
             "time": t.time.isoformat(), "status_text": t.status_text, "location": t.location,

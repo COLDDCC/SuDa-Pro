@@ -38,6 +38,12 @@ PUBLIC_METHODS = {
     "System.Order.addTrack",
     "System.Order.staffPendingPackages",
     "System.Order.staffOrders",
+    "System.Order.reweigh",
+    "System.Order.staffPhotoTasks",
+    "System.Order.addPackagePhoto",
+    "System.Order.deletePackagePhoto",
+    # 拍照服务报价：预报页要在勾选框旁边显示"+¥2.50"，登录前也可能看到
+    "System.Order.photoServiceInfo",
 }
 
 

@@ -39,6 +39,9 @@ pytest 用来确认**代码本身**是对的，两者不重复。
 | `JWT_EXPIRE_DAYS` | `30` | token 有效期 |
 | `WX_APPID` / `WX_SECRET` | 空 | 微信小程序凭证，配齐后 `devLogin` 自动禁用 |
 | `STAFF_KEY` | 空 | 仓库/客服操作的共享密钥（见下） |
+| `PHOTO_SERVICE_FEE` | `2.50` | 入库拍照服务费，人民币元/包裹 |
+| `UPLOAD_DIR` | `backend/uploads` | 包裹照片存放目录，生产环境要放在挂载卷上 |
+| `MAX_UPLOAD_MB` | `10` | 单张图片大小上限 |
 | `ALLOWED_ORIGINS` | `*` | 跨域白名单，逗号分隔。小程序不受同源策略约束，默认放开 |
 
 ## 生产环境配置自检
@@ -84,6 +87,59 @@ export STAFF_KEY=随便设一个只有你和员工知道的字符串
 - `System.Order.addTrack`(order_id, status_text, location, staff_key) — 追加一条物流轨迹
 - `System.Order.staffPendingPackages`(staff_key) — 查所有会员的待入库/已入库包裹
 - `System.Order.staffOrders`(status, staff_key) — 按状态查所有会员的订单
+- `System.Order.reweigh`(goods_id, actual_weight, staff_key) — 改称重（只能在包裹进订单前）
+- `System.Order.staffPhotoTasks`(staff_key) — 待拍照的包裹（客户申请了、还没拍的）
+- `System.Order.addPackagePhoto`(goods_id, url, kind, staff_key) — 给包裹挂一张照片
+- `System.Order.deletePackagePhoto`(photo_id, staff_key) — 删照片
+
+`markInbound` 的 `actual_weight` 是**必填**的，见下面「计费重量」。
+
+## 计费重量：只认仓库称的
+
+`addforecast` 里的 `netwt` 是用户预报时自己填的，**只作参考展示，绝不参与计费**。
+运费一律按 `markInbound` 时录入的 `actual_weight` 算。
+
+道理很直接：按用户填的数收钱，填 0.1kg 实际寄 10kg 就白送了。所以：
+
+- 入库不录称重直接报错，包裹进不了「已入库」
+- 只有「已入库」（即已称重）的包裹才能下单，还没到仓的不行
+- 包裹一旦进了订单就不能再改称重（改了用户看到的报价就和扣款对不上）
+
+## 订单费用明细
+
+订单金额不是一个数字，是 `OrderFee` 里若干条之和：
+
+```
+运费（标准海运专线）   计费重量 3.500kg × ¥38.00/kg   ¥133.00
+入库拍照服务          1 个包裹 × ¥2.50/个             ¥2.50
+                                              合计   ¥135.50
+```
+
+`Order.total_fee` 只是这些条目之和的缓存，**改金额一律走 `fees`，别直接写它**。
+以后加打包费、加固费、超重费都是加一条，不用改表结构。
+
+`System.Order.previewFee` 和 `savePage` 走同一个计算函数，所以下单页显示多少、
+提交后就扣多少，不会出现「报价一套扣款一套」。
+
+## 图片上传
+
+图片是 multipart，塞不进 `/api` 那套 `{method, params}` 的 JSON，所以单开一个端点：
+
+```
+POST /upload        multipart: file=<图片>, staff_key=<密钥>
+-> {"code": 0, "data": {"url": "/uploads/<随机名>.png"}}
+```
+
+拿到 url 再调 `System.Order.addPackagePhoto` 挂到具体包裹上。两种 `kind`：
+
+- `inbound` 入库拍照 —— 用户付费申请的服务，**拍了才收费**（申请了但仓库没拍不收钱）
+- `packing` 打包留底 —— 仓库发货前自己拍的存档，不收费，出纠纷时用来自证
+
+文件名由服务端随机生成，不用客户端传来的 `filename`（那里面可能带 `../` 想跑出目录）。
+
+> **已知取舍**：`/uploads/*` 是公开可读的，安全性靠随机文件名（URL 猜不到）。
+> 小程序的 `<image>` 标签发不了自定义请求头，做鉴权就得改成签名 URL。
+> 包裹照片敏感度不高，先这样；真需要再升级。
 
 ## 后台管理页
 

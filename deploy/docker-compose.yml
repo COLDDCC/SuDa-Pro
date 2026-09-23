@@ -12,6 +12,7 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: sqlite:////data/suda.db
+      UPLOAD_DIR: /data/uploads
     volumes:
       - api-data:/data
     expose:
@@ -32,6 +33,6 @@ services:
       - caddy-config:/config
 
 volumes:
-  api-data:      # SQLite 数据库，别删，删了订单就没了
+  api-data:      # SQLite 数据库 + 包裹照片，别删，删了订单和留底照片一起没
   caddy-data:    # HTTPS 证书
   caddy-config:

@@ -1,5 +1,6 @@
 const { call } = require('../../utils/request.js');
 const { orderStatus, packageStatus } = require('../../utils/format.js');
+const { BASE_URL: baseUrl } = require('../../utils/config.js');
 
 Page({
   data: {
@@ -18,9 +19,17 @@ Page({
   loadDetail() {
     call('System.Order.orderDetail', { order_id: this.orderId }).then((order) => {
       order.statusInfo = orderStatus(order.status);
-      order.packages = order.packages.map((p) => ({ ...p, statusInfo: packageStatus(p.status) }));
+      order.packages = order.packages.map((p) => {
+        const urls = (p.photos || []).map((ph) => baseUrl + ph.url);
+        return { ...p, statusInfo: packageStatus(p.status), photoUrls: urls, hasPhotos: urls.length > 0 };
+      });
       this.setData({ order });
     });
+  },
+
+  onPreviewPhoto(e) {
+    const { urls, current } = e.currentTarget.dataset;
+    wx.previewImage({ urls, current });
   },
 
   onCloseOrder() {

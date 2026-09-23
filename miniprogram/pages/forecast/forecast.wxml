@@ -15,9 +15,19 @@
     <input class="input" placeholder="日本国内快递单号 *" data-field="express_num" value="{{form.express_num}}" bindinput="onFieldInput" />
     <input class="input" placeholder="商品名称 *" data-field="good_name" value="{{form.good_name}}" bindinput="onFieldInput" />
     <input class="input" type="number" placeholder="数量" data-field="count" value="{{form.count}}" bindinput="onFieldInput" />
-    <input class="input" type="digit" placeholder="净重(kg)" data-field="netwt" value="{{form.netwt}}" bindinput="onFieldInput" />
+    <input class="input" type="digit" placeholder="预估净重(kg)" data-field="netwt" value="{{form.netwt}}" bindinput="onFieldInput" />
+    <view class="hint">重量随便估一个就行，运费以包裹到仓后仓库实际称重为准</view>
     <input class="input" type="digit" placeholder="商品价值(元)" data-field="price" value="{{form.price}}" bindinput="onFieldInput" />
     <input class="input" type="digit" placeholder="海关申报价值(元，留空同商品价值)" data-field="cc_registered_price" value="{{form.cc_registered_price}}" bindinput="onFieldInput" />
+
+    <view class="switch-row">
+      <view class="switch-text">
+        <view class="switch-label">到仓后帮我拍照</view>
+        <view class="muted">仓库拆箱验货时拍照留证，在小程序里能直接看<block wx:if="{{photoFee}}">，¥{{photoFee}}/个包裹</block></view>
+      </view>
+      <switch checked="{{photoRequested}}" bindchange="onPhotoToggle" color="#2563eb" />
+    </view>
+    <view class="hint">现在不勾也没关系，包裹到仓后还能在「我的包裹」里补申请</view>
 
     <button class="btn-primary" bindtap="onSubmit">提交预报</button>
   </view>

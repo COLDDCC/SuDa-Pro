@@ -12,8 +12,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY scripts ./scripts
 
-# SQLite 库文件放在挂载出去的卷上，不然每次重新部署容器数据就没了。
-ENV DATABASE_URL=sqlite:////data/suda.db
+# SQLite 库文件和上传的包裹照片都放在挂载出去的卷上，
+# 不然每次重新部署，订单数据和仓库拍的留底照片会一起没。
+ENV DATABASE_URL=sqlite:////data/suda.db \
+    UPLOAD_DIR=/data/uploads
 VOLUME ["/data"]
 
 EXPOSE 8811

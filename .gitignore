@@ -10,6 +10,9 @@ backend/app/modules/__pycache__/
 backend/*.db
 backend/*.db-journal
 
+# 上传的包裹照片（用户数据，不进版本库）
+backend/uploads/
+
 # Misc
 .DS_Store
 

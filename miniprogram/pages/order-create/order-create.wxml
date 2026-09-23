@@ -10,13 +10,17 @@
 
   <view class="card">
     <view class="section-title">选择包裹</view>
-    <view wx:if="{{!packages.length}}" class="muted">没有可下单的包裹，请先预报</view>
+    <view wx:if="{{!packages.length}}" class="muted">
+      没有可下单的包裹。包裹寄到日本仓、仓库签收称重之后，才能在这里选中发货。
+    </view>
     <view wx:for="{{packages}}" wx:key="id" class="row" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;"
       data-id="{{item.id}}" bindtap="onTogglePackage">
       <checkbox checked="{{selectedIds.indexOf(item.id) > -1}}" />
       <view style="flex: 1; margin-left: 12rpx;">
         <view>{{item.good_name}}</view>
-        <view class="muted">净重 {{item.netwt}}kg · ¥{{item.price}}</view>
+        <view class="muted">
+          实测 {{item.actual_weight}}kg · ¥{{item.price}}<block wx:if="{{item.photoCharged}}"> · 含入库拍照</block>
+        </view>
       </view>
     </view>
   </view>
@@ -36,9 +40,20 @@
     <input class="input" placeholder="给客服的备注（选填）" value="{{remark}}" bindinput="onRemarkInput" />
   </view>
 
-  <view class="card row">
-    <view>预估重量 {{totalWeight}}kg</view>
-    <view style="color: #2b6cff; font-weight: 700; font-size: 32rpx;">¥{{totalFee}}</view>
+  <view class="card">
+    <view class="section-title">费用明细</view>
+    <view wx:if="{{!fees.length}}" class="muted">选好包裹和线路后，这里会列出每一笔钱怎么算的</view>
+    <view wx:for="{{fees}}" wx:key="fee_type" class="fee-row">
+      <view class="fee-name">
+        <view>{{item.name}}</view>
+        <view class="fee-detail">{{item.detail}}</view>
+      </view>
+      <view class="fee-amount">¥{{item.amount}}</view>
+    </view>
+    <view class="fee-total" wx:if="{{fees.length}}">
+      <view>合计（计费重量 {{totalWeight}}kg）</view>
+      <view class="fee-total-amount">¥{{totalFee}}</view>
+    </view>
   </view>
 
   <button class="btn-primary" bindtap="onSubmit">提交订单</button>

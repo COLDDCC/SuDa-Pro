@@ -27,6 +27,24 @@ JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "30"))
 # member token. Leave unset to disable these methods entirely.
 STAFF_KEY = os.environ.get("STAFF_KEY", "")
 
+# ---- 增值服务定价 ----
+# 入库拍照服务费，单位人民币元，按"每个包裹一次"收。
+# 业务上谈的是 50 日元，但全系统统一用人民币结算（日元和人民币混在一起迟早算错账），
+# 所以这里配的是换算后的人民币价。汇率变了就改这个环境变量，不用动代码。
+PHOTO_SERVICE_FEE = os.environ.get("PHOTO_SERVICE_FEE", "2.50")
+
+# ---- 上传的包裹照片 ----
+# 存本地磁盘。生产环境这个目录要落在挂载卷上，不然重新部署照片就没了
+# （deploy/docker-compose.yml 里已经把 /data 挂出去了）。
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
+UPLOAD_URL_PREFIX = "/uploads"
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_MB", "10")) * 1024 * 1024
+ALLOWED_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
 # 允许跨域访问 /api 的来源，逗号分隔。小程序不受浏览器同源策略约束，所以默认放开；
 # 如果以后做了 H5 版，把域名列在这里收紧。
 ALLOWED_ORIGINS = [

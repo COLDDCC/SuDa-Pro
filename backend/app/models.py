@@ -127,11 +127,55 @@ class Package(Base):
     export_unit_price = Column(Numeric(10, 2), default=0)  # 出口单价
     is_second_goods = Column(Boolean, default=False)
 
+    # netwt 是"用户预报时自己填的重量"，只能当参考，绝不能拿来算钱——填 0.1kg
+    # 实际寄 10kg 的话运费就白送了。真正计费用的是下面这个仓库实际称重。
+    actual_weight = Column(Numeric(10, 3), nullable=True)   # 仓库实际称重 kg
+    weighed_at = Column(DateTime, nullable=True)
+
+    # 入库拍照是收费增值服务。用户可以在预报时勾选，也可以等包裹到仓后再补申请，
+    # 两条路都汇到 photo_requested 这一个标记上。
+    photo_requested = Column(Boolean, default=False)
+    photo_requested_at = Column(DateTime, nullable=True)
+
     status = Column(String(16), default=STATUS_PENDING)
     created_at = Column(DateTime, default=now)
     inbound_at = Column(DateTime, nullable=True)
 
     member = relationship("Member", back_populates="packages")
+    photos = relationship("PackagePhoto", back_populates="package",
+                          cascade="all, delete-orphan")
+
+    @property
+    def billable_weight(self):
+        """计费重量。没称重的包裹不该能下单，所以这里返回 None 让调用方挡回去，
+        而不是悄悄退回用户填的那个数。"""
+        return self.actual_weight
+
+    @property
+    def has_inbound_photos(self):
+        return any(p.kind == PackagePhoto.KIND_INBOUND for p in self.photos)
+
+
+class PackagePhoto(Base):
+    """包裹照片。
+
+    两种来源，计费规则完全不同：
+      - inbound  入库拍照：用户申请的增值服务，按包裹收费（见 config.PHOTO_SERVICE_FEE）
+      - packing  打包留底：仓库发货前自己拍的存档，不收费，出纠纷时用来自证
+    """
+    __tablename__ = "package_photos"
+
+    KIND_INBOUND = "inbound"
+    KIND_PACKING = "packing"
+
+    id = Column(Integer, primary_key=True)
+    package_id = Column(Integer, ForeignKey("packages.id"), nullable=False)
+    kind = Column(String(16), default=KIND_INBOUND)
+    url = Column(String(255), nullable=False)
+    note = Column(String(255), default="")
+    created_at = Column(DateTime, default=now)
+
+    package = relationship("Package", back_populates="photos")
 
 
 order_items_table = "order_items"
@@ -157,6 +201,8 @@ class Order(Base):
     status = Column(String(16), default=STATUS_PENDING)
 
     total_weight = Column(Numeric(10, 3), default=0)
+    # total_fee 是 fees 里各项之和的缓存，方便列表页直接读，不用每次聚合。
+    # 唯一的真相在 OrderFee 里，改金额一律走 fees，别直接写这个字段。
     total_fee = Column(Numeric(10, 2), default=0)
 
     created_at = Column(DateTime, default=now)
@@ -167,6 +213,32 @@ class Order(Base):
     line = relationship("Line")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     tracks = relationship("OrderTrack", back_populates="order", cascade="all, delete-orphan")
+    fees = relationship("OrderFee", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderFee(Base):
+    """订单费用明细。
+
+    订单金额不是一个拍脑袋的数字，而是若干条可解释的费用之和：
+    运费一条，入库拍照每个包裹一条，以后加打包费/加固费/超重费也是加一条，
+    不用再改表结构。用户端把这几条展开给他看，省掉"为什么多了 50 块"的客服工单。
+    """
+    __tablename__ = "order_fees"
+
+    TYPE_SHIPPING = "shipping"   # 运费
+    TYPE_PHOTO = "photo"         # 入库拍照服务
+
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    fee_type = Column(String(24), nullable=False)
+    name = Column(String(64), nullable=False)      # 展示给用户的名字，如"运费（标准空运专线）"
+    detail = Column(String(128), default="")       # 算法说明，如"2.50kg × ¥68/kg"
+    unit_price = Column(Numeric(10, 2), default=0)
+    quantity = Column(Numeric(10, 3), default=1)
+    amount = Column(Numeric(10, 2), default=0)     # 这一条的小计
+    created_at = Column(DateTime, default=now)
+
+    order = relationship("Order", back_populates="fees")
 
 
 class OrderItem(Base):
