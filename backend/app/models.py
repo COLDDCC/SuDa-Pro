@@ -1,5 +1,6 @@
 import datetime
 import uuid
+from decimal import Decimal, ROUND_CEILING, ROUND_UP
 
 from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, Text
@@ -11,6 +12,12 @@ from .database import Base
 
 def now():
     return datetime.datetime.utcnow()
+
+
+def _trim(value):
+    """把 0.600 显示成 0.6、45.00 显示成 45——价格文案里不该出现多余的零。"""
+    d = Decimal(str(value)).normalize()
+    return f"{d:f}"
 
 
 def gen_order_no():
@@ -75,18 +82,76 @@ class Warehouse(Base):
 
 
 class Line(Base):
-    """物流线路"""
+    """物流线路 —— 首重 + 续重的阶梯计费。
+
+    运费 = 首重费 + ceil((重量 - 首重) / 续重单位) × 续重费
+
+    「精致小」：首重 0.6kg 收 45 元，之后每 0.5kg 加 35 元
+    「无忧草」：首重 1kg 收 80 元，之后每 0.1kg 加 8 元
+
+    续重是**向上取整**的：超出 0.1kg 也按一整档收，物流商就是这么跟我们算的。
+
+    两条线的区别不在重量而在**申报价值**——价值高的必须走「无忧草」，
+    那条线贵一点但包清关。所以下单时要按申报价值卡准入，否则会卡在海关。
+    """
     __tablename__ = "lines"
 
     id = Column(Integer, primary_key=True)
     shop_id = Column(Integer, default=1)
     name = Column(String(64), nullable=False)
     description = Column(Text, default="")
-    price_per_kg = Column(Numeric(10, 2), nullable=False)
-    min_weight = Column(Numeric(10, 2), default=0.1)
+
+    first_weight = Column(Numeric(10, 3), default=1)      # 首重 kg
+    first_fee = Column(Numeric(10, 2), default=0)         # 首重费用
+    step_weight = Column(Numeric(10, 3), default=Decimal("0.5"))   # 续重单位 kg
+    step_fee = Column(Numeric(10, 2), default=0)          # 每档续重费用
+
+    # 申报价值准入（人民币元）。max 为 None 表示不封顶。
+    min_declared_value = Column(Numeric(10, 2), default=0)
+    max_declared_value = Column(Numeric(10, 2), nullable=True)
+
     days_min = Column(Integer, default=7)
     days_max = Column(Integer, default=15)
     is_active = Column(Boolean, default=True)
+
+    def quote(self, weight: Decimal) -> Decimal:
+        """按这条线路算某个重量的运费。"""
+        weight = Decimal(str(weight))
+        first = Decimal(str(self.first_weight))
+        fee = Decimal(str(self.first_fee))
+        if weight > first:
+            step = Decimal(str(self.step_weight))
+            over = weight - first
+            # 向上取整到整档：超 0.01kg 也算一整档
+            steps = int((over / step).to_integral_value(rounding=ROUND_CEILING))
+            fee += steps * Decimal(str(self.step_fee))
+        return fee.quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+    def quote_detail(self, weight: Decimal) -> str:
+        """给用户看的算法说明，比如「首重 0.6kg ¥45 + 续重 2 档 × ¥35」。"""
+        weight = Decimal(str(weight))
+        first = Decimal(str(self.first_weight))
+        text = f"首重 {_trim(first)}kg ¥{_trim(self.first_fee)}"
+        if weight > first:
+            step = Decimal(str(self.step_weight))
+            over = weight - first
+            steps = int((over / step).to_integral_value(rounding=ROUND_CEILING))
+            text += f" + 续重 {steps} 档 × ¥{_trim(self.step_fee)}/{_trim(step)}kg"
+        return text
+
+    def accepts_value(self, declared_value: Decimal) -> bool:
+        v = Decimal(str(declared_value))
+        if v < Decimal(str(self.min_declared_value or 0)):
+            return False
+        if self.max_declared_value is not None and v > Decimal(str(self.max_declared_value)):
+            return False
+        return True
+
+    def value_range_text(self) -> str:
+        lo = _trim(self.min_declared_value or 0)
+        if self.max_declared_value is None:
+            return f"申报价值 ¥{lo} 以上"
+        return f"申报价值 ¥{lo}–¥{_trim(self.max_declared_value)}"
 
 
 class Notice(Base):
@@ -227,6 +292,7 @@ class OrderFee(Base):
 
     TYPE_SHIPPING = "shipping"   # 运费
     TYPE_PHOTO = "photo"         # 入库拍照服务
+    TYPE_STORAGE = "storage"     # 囤货费（超出免费存放期）
 
     id = Column(Integer, primary_key=True)
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)

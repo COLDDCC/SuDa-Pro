@@ -3,6 +3,7 @@ import hmac
 from decimal import Decimal, ROUND_UP
 
 from ..config import STAFF_KEY, PHOTO_SERVICE_FEE
+from .. import business, feishu
 from ..errors import ApiError
 from .. import models
 from .. import tracking
@@ -395,6 +396,18 @@ def registerUnclaimed(db, member, params):
     db.add(u)
     db.commit()
     db.refresh(u)
+
+    feishu.notify(
+        "📦 收到一个无主包裹",
+        [
+            ("快递单号", u.express_num),
+            ("品名", u.good_name or "未填"),
+            ("称重", f"{u.actual_weight}kg" if u.actual_weight is not None else "未称"),
+            ("备注", u.note or "无"),
+        ],
+        color="orange",
+        footer="客户可以在小程序「我的 → 认领包裹」里自己认领；久无人认领需要主动联系",
+    )
     return _unclaimed_dict(u)
 
 
@@ -486,12 +499,12 @@ def claimPackage(db, member, params):
 # ---- 下单发货 ----
 
 def getLine(db, member, params):
+    """下单页的线路列表。和 System.Address.lineList 返回同样的结构，
+    免得两处显示的价格规则对不上。"""
+    from .address import _line_dict
     shop_id = params.get("shop_id", 1)
     rows = db.query(models.Line).filter_by(shop_id=shop_id, is_active=True).all()
-    return [{
-        "id": l.id, "name": l.name, "price_per_kg": str(l.price_per_kg),
-        "min_weight": str(l.min_weight),
-    } for l in rows]
+    return [_line_dict(l) for l in rows]
 
 
 def _resolve_order_inputs(db, member, params):
@@ -534,25 +547,92 @@ def _resolve_order_inputs(db, member, params):
         if p.billable_weight is None:
             raise ApiError(f"包裹「{p.good_name}」还没称重，请联系客服")
 
+    # 申报价值准入：两条线的区别不在重量而在价值，走错线会卡在海关。
+    value = _declared_value(packages)
+    if not line.accepts_value(value):
+        raise ApiError(
+            f"这一单申报价值 ¥{models._trim(value)}，不在「{line.name}」的"
+            f"{line.value_range_text()}范围内，请换一条线路，或者拆成两单分别发"
+        )
+
     return address, line, packages
 
 
-def _compute_fees(line, packages):
+def _check_consignee_not_reused(db, member, address, exclude_order_id=None):
+    """同一航次里身份证、地址、电话都不能重复，否则整票会被海关卡住。
+
+    没有航次表，就用"还没发出的订单"近似当前航次——它们会一起走下一班。
+    检查范围是所有会员，不只是自己：海关看的是实名信息本身，不管是谁下的单。
+    """
+    if not business.ENFORCE_UNIQUE_CONSIGNEE:
+        return
+
+    q = db.query(models.Order).join(models.Address).filter(
+        models.Order.status == models.Order.STATUS_PENDING,
+    )
+    if exclude_order_id:
+        q = q.filter(models.Order.id != exclude_order_id)
+
+    for other in q.all():
+        a = other.address
+        if a is None or a.id == address.id:
+            # 同一条地址记录本身也算重复，下面统一报
+            if a is not None and a.id == address.id:
+                raise ApiError(
+                    "这个收件地址已经有一个待发货的订单了。"
+                    f"{business.CUSTOMS_PORT}清关要求同一航次里身份证、地址、电话都不能重复，"
+                    "请等上一单发出后再下，或者换一个收件人"
+                )
+            continue
+        for field, label in (("idnumber", "身份证号"), ("mobile", "手机号"), ("address", "详细地址")):
+            mine = (getattr(address, field) or "").strip()
+            theirs = (getattr(a, field) or "").strip()
+            if mine and mine == theirs:
+                raise ApiError(
+                    f"这个{label}已经有一个待发货的订单了。"
+                    f"{business.CUSTOMS_PORT}清关要求同一航次里身份证、地址、电话都不能重复，"
+                    "请等上一单发出后再下，或者换一个收件人"
+                )
+
+
+def _declared_value(packages):
+    """整票的申报价值 = 各包裹申报价值之和。海关看的是整票，不是单件。
+
+    用户没填申报价值时退回商品价值——总比报 0 强，报 0 更容易被查。
+    """
+    total = Decimal("0")
+    for p in packages:
+        v = Decimal(str(p.cc_registered_price or 0))
+        if v <= 0:
+            v = Decimal(str(p.price or 0))
+        total += v
+    return total
+
+
+def _storage_days(package, as_of=None):
+    """这个包裹在仓库躺了几天超出免费期。没入库时间的按 0 算。"""
+    if package.inbound_at is None:
+        return 0
+    as_of = as_of or models.now()
+    days = (as_of - package.inbound_at).days
+    return max(0, days - business.FREE_STORAGE_DAYS)
+
+
+def _compute_fees(line, packages, as_of=None):
     """算出这一单的重量和费用明细。
 
     下单和下单前预览走的是同一个函数——报价和实际扣款必须永远是同一个数，
     否则就是当面一套背后一套。
     """
     total_weight = sum((p.billable_weight for p in packages), Decimal("0"))
-    billable = max(total_weight, line.min_weight)
-    shipping = (billable * line.price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_UP)
 
+    shipping = line.quote(total_weight)
     fees = [{
         "fee_type": models.OrderFee.TYPE_SHIPPING,
         "name": f"运费（{line.name}）",
-        "detail": f"计费重量 {billable}kg × ¥{line.price_per_kg}/kg",
-        "unit_price": line.price_per_kg,
-        "quantity": billable,
+        "detail": f"{models._trim(total_weight)}kg：{line.quote_detail(total_weight)}",
+        "unit_price": Decimal(str(line.first_fee)),
+        "quantity": total_weight,
         "amount": shipping,
     }]
 
@@ -565,10 +645,29 @@ def _compute_fees(line, packages):
         fees.append({
             "fee_type": models.OrderFee.TYPE_PHOTO,
             "name": "入库拍照服务",
-            "detail": f"{len(photographed)} 个包裹 × ¥{unit}/个",
+            "detail": f"{len(photographed)} 个包裹 × ¥{models._trim(unit)}/个",
             "unit_price": unit,
             "quantity": qty,
             "amount": (unit * qty).quantize(Decimal("0.01"), rounding=ROUND_UP),
+        })
+
+    # 囤货费：入库后 FREE_STORAGE_DAYS 天免费，超出按天按包裹收。
+    # 按每个包裹各自的入库时间算——合箱时有的躺得久有的刚到，不能一刀切。
+    overdue = [(p, _storage_days(p, as_of)) for p in packages]
+    overdue = [(p, d) for p, d in overdue if d > 0]
+    if overdue:
+        unit = Decimal(business.STORAGE_FEE_PER_DAY)
+        total_days = sum(d for _, d in overdue)
+        detail = "、".join(f"{p.good_name} 超期 {d} 天" for p, d in overdue[:3])
+        if len(overdue) > 3:
+            detail += f" 等 {len(overdue)} 个包裹"
+        fees.append({
+            "fee_type": models.OrderFee.TYPE_STORAGE,
+            "name": f"囤货费（入库 {business.FREE_STORAGE_DAYS} 天内免费）",
+            "detail": f"{detail}，共 {total_days} 天 × ¥{models._trim(unit)}/天",
+            "unit_price": unit,
+            "quantity": Decimal(total_days),
+            "amount": (unit * total_days).quantize(Decimal("0.01"), rounding=ROUND_UP),
         })
 
     total_fee = sum((f["amount"] for f in fees), Decimal("0"))
@@ -602,6 +701,7 @@ def savePage(db, member, params):
         raise ApiError("请选择收件地址")
 
     address, line, packages = _resolve_order_inputs(db, member, params)
+    _check_consignee_not_reused(db, member, address)
     total_weight, fees, total_fee = _compute_fees(line, packages)
 
     order = models.Order(
@@ -627,6 +727,24 @@ def savePage(db, member, params):
     db.add(models.OrderTrack(order_id=order.id, status_text="订单已创建，等待安排发货", location="日本仓"))
     db.commit()
     db.refresh(order)
+
+    # 推飞书：新订单意味着有一笔钱要去收，这是最需要你立刻知道的事。
+    feishu.notify(
+        "🧾 新订单，待收款",
+        [
+            ("订单号", order.order_no),
+            ("金额", f"¥{order.total_fee}"),
+            ("会员", f"{member.nickname or '未设昵称'}（{member.cn_code}）"),
+            ("联系电话", address.mobile),
+            ("线路", line.name),
+            ("重量/件数", f"{models._trim(total_weight)}kg / {len(packages)} 件"),
+            ("收件人", f"{address.consigner} {address.mobile}"),
+            ("收件地址", f"{address.province_name}{address.city_name}"
+                          f"{address.district_name}{address.address}"),
+        ],
+        color="blue",
+        footer="费用明细：" + "；".join(f"{f['name']} ¥{f['amount']}" for f in fees),
+    )
     return {
         "order_id": order.id,
         "order_no": order.order_no,
@@ -782,6 +900,13 @@ def confirmReceived(db, member, params):
     o.status = models.Order.STATUS_SIGNED
     db.add(models.OrderTrack(order_id=o.id, status_text="用户确认签收", location=""))
     db.commit()
+
+    feishu.notify(
+        "✅ 订单已签收",
+        [("订单号", o.order_no), ("金额", f"¥{o.total_fee}"),
+         ("会员", f"{member.nickname or '未设昵称'}（{member.cn_code}）")],
+        color="green",
+    )
     return _order_summary(o)
 
 

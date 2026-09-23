@@ -45,6 +45,13 @@ ALLOWED_IMAGE_TYPES = {
     "image/webp": ".webp",
 }
 
+# ---- 飞书群机器人 ----
+# 飞书群 -> 设置 -> 群机器人 -> 添加自定义机器人，把拿到的 webhook 网址填这里。
+# 留空就不推送，不影响任何业务功能。
+FEISHU_WEBHOOK_URL = os.environ.get("FEISHU_WEBHOOK_URL", "")
+# 如果在机器人的「安全设置」里开了签名校验，把密钥填这里；没开就留空。
+FEISHU_SIGN_SECRET = os.environ.get("FEISHU_SIGN_SECRET", "")
+
 # 允许跨域访问 /api 的来源，逗号分隔。小程序不受浏览器同源策略约束，所以默认放开；
 # 如果以后做了 H5 版，把域名列在这里收紧。
 ALLOWED_ORIGINS = [

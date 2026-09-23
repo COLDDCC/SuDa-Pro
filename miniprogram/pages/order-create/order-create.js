@@ -12,6 +12,8 @@ Page({
     totalWeight: '0',
     totalFee: '0',
     fees: [],
+    selectedLine: null,
+    declaredValue: '0',
   },
 
   onShow() {
@@ -38,7 +40,9 @@ Page({
     call('System.Order.getLine', {}).then((lines) => {
       this.setData({ lines });
       if (lines.length) {
-        this.setData({ lineId: lines[0].id, selectedLineName: lines[0].name }, () => this.recalc());
+        this.setData({
+          lineId: lines[0].id, selectedLineName: lines[0].name, selectedLine: lines[0],
+        }, () => this.recalc());
       }
     });
   },
@@ -55,12 +59,26 @@ Page({
     } else {
       selected.push(id);
     }
-    this.setData({ selectedIds: selected }, () => this.recalc());
+    this.setData({ selectedIds: selected }, () => {
+      this.refreshDeclaredValue();
+      this.recalc();
+    });
   },
 
   onLineChange(e) {
     const line = this.data.lines[e.detail.value];
-    this.setData({ lineId: line.id, selectedLineName: line.name }, () => this.recalc());
+    this.setData({
+      lineId: line.id, selectedLineName: line.name, selectedLine: line,
+    }, () => this.recalc());
+  },
+
+  // 申报价值决定能走哪条线，选包裹时就把这个数亮出来，省得提交后才被打回。
+  // 后端有权威校验，这里只是提前提示。
+  refreshDeclaredValue() {
+    const total = this.data.packages
+      .filter((p) => this.data.selectedIds.includes(p.id))
+      .reduce((sum, p) => sum + (Number(p.cc_registered_price) || Number(p.price) || 0), 0);
+    this.setData({ declaredValue: total.toFixed(2) });
   },
 
   // 费用一律问后端要（System.Order.previewFee），前端一个数都不自己算。

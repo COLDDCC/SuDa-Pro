@@ -162,7 +162,8 @@ def test_photo_fee_appears_as_its_own_line_item(api, token, address_id, line, li
     photo_fees = [f for f in order["fees"] if f["fee_type"] == "photo"]
     assert len(photo_fees) == 1
     assert Decimal(photo_fees[0]["amount"]) == PHOTO_FEE
-    assert Decimal(order["total_fee"]) == Decimal("1") * Decimal(line["price_per_kg"]) + PHOTO_FEE
+    shipping = [f for f in order["fees"] if f["fee_type"] == "shipping"][0]
+    assert Decimal(order["total_fee"]) == Decimal(shipping["amount"]) + PHOTO_FEE
 
 
 def test_photo_fee_scales_with_package_count(api, token, address_id, line_id, photographed_package):

@@ -33,6 +33,13 @@
         <view class="muted">点击切换</view>
       </view>
     </picker>
+    <view class="muted" wx:if="{{selectedLine}}">{{selectedLine.price_text}}</view>
+    <view class="muted" wx:if="{{selectedLine}}">
+      适用{{selectedLine.value_range}} · {{selectedLine.days_min}}-{{selectedLine.days_max}}天
+    </view>
+    <view class="hint" style="margin: 12rpx 0 0;">
+      这一单申报价值约 ¥{{declaredValue}}，请选择匹配的线路，否则会卡在海关
+    </view>
   </view>
 
   <view class="card">

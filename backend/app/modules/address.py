@@ -5,6 +5,16 @@ from ..errors import ApiError
 from .. import models, regions
 
 
+def _to_decimal(value):
+    """转不了就返回 None，交给调用方报错——不能让 Decimal() 直接炸成 500。"""
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
 def province(db, member, params):
     return regions.list_provinces()
 
@@ -24,12 +34,21 @@ def district(db, member, params):
 
 
 def _line_dict(l: models.Line):
+    """线路的完整描述。前端要能自己把价格规则讲清楚，所以首重/续重都给出去。"""
     return {
         "id": l.id,
         "name": l.name,
         "description": l.description,
-        "price_per_kg": str(l.price_per_kg),
-        "min_weight": str(l.min_weight),
+        "first_weight": str(l.first_weight),
+        "first_fee": str(l.first_fee),
+        "step_weight": str(l.step_weight),
+        "step_fee": str(l.step_fee),
+        "price_text": (f"首重 {models._trim(l.first_weight)}kg ¥{models._trim(l.first_fee)}，"
+                       f"续重 ¥{models._trim(l.step_fee)}/{models._trim(l.step_weight)}kg"),
+        "min_declared_value": str(l.min_declared_value or 0),
+        "max_declared_value": (
+            None if l.max_declared_value is None else str(l.max_declared_value)),
+        "value_range": l.value_range_text(),
         "days_min": l.days_min,
         "days_max": l.days_max,
     }
@@ -50,12 +69,11 @@ def lineInfo(db, member, params):
 
 
 def estimateFee(db, member, params):
-    """差异化功能：运费计算器。按重量(kg)算出各条线路的预估费用，首页直接展示。
+    """差异化功能：运费计算器。按重量算出各条线路的预估费用，首页直接展示。
     params: {weight}
     """
-    try:
-        weight = Decimal(str(params.get("weight", 0)))
-    except Exception:
+    weight = _to_decimal(params.get("weight"))
+    if weight is None:
         raise ApiError("重量格式不正确")
     if weight <= 0:
         raise ApiError("请输入有效的重量")
@@ -63,13 +81,16 @@ def estimateFee(db, member, params):
     lines = db.query(models.Line).filter_by(is_active=True).all()
     result = []
     for l in lines:
-        billable = max(weight, l.min_weight)
-        fee = (billable * l.price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_UP)
         result.append({
             "line_id": l.id,
             "name": l.name,
-            "billable_weight": str(billable),
-            "fee": str(fee),
+            "description": l.description,
+            "fee": str(l.quote(weight)),
+            "fee_detail": l.quote_detail(weight),
+            "value_range": l.value_range_text(),
+            "min_declared_value": str(l.min_declared_value or 0),
+            "max_declared_value": (
+                None if l.max_declared_value is None else str(l.max_declared_value)),
             "days_min": l.days_min,
             "days_max": l.days_max,
         })

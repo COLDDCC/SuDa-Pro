@@ -24,10 +24,16 @@
         value="{{weightInput}}" bindinput="onWeightInput" />
       <button class="btn-outline" bindtap="onEstimateFee">计算</button>
     </view>
-    <view wx:for="{{feeResult}}" wx:key="line_id" class="row" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;">
-      <view>{{item.name}}</view>
-      <view class="muted">{{item.days_min}}-{{item.days_max}}天</view>
-      <view style="color: #2b6cff; font-weight: 600;">¥{{item.fee}}</view>
+    <view wx:for="{{feeResult}}" wx:key="line_id" style="padding: 16rpx 0; border-top: 1rpx solid #f0f0f0;">
+      <view class="row">
+        <view style="font-weight: 600;">{{item.name}}</view>
+        <view style="color: #2b6cff; font-weight: 700; font-size: 32rpx;">¥{{item.fee}}</view>
+      </view>
+      <view class="muted">{{item.fee_detail}}</view>
+      <view class="muted">{{item.value_range}} · {{item.days_min}}-{{item.days_max}}天</view>
+    </view>
+    <view class="hint" wx:if="{{feeResult.length}}" style="margin: 16rpx 0 0;">
+      两条线的区别在申报价值，不在重量。价值超过范围会卡在海关，下单时系统会自动提醒。
     </view>
   </view>
 

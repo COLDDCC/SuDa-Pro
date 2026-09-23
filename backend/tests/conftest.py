@@ -5,6 +5,7 @@
 放在 conftest 顶层就是为了这个 —— pytest 会先加载 conftest 再加载测试模块。
 """
 import io
+import itertools
 import os
 import tempfile
 import uuid
@@ -84,15 +85,30 @@ def region(api):
     }
 
 
+# 大连港清关要求同一航次里身份证、地址、电话都不能重复，所以每个测试地址的
+# 实名信息都得是独一份的，否则测试之间会互相撞单。
+_seq = itertools.count(1)
+
+
 @pytest.fixture
-def address_id(api, token, region):
-    return api.ok("System.Member.addAddress", {
-        "consigner": "张三",
-        "mobile": "13800138000",
-        "address": "某某路 1 号",
-        "idnumber": "110101199001011234",
-        **region,
-    }, token)["id"]
+def make_address(api, region):
+    def _make(token, **kw):
+        n = next(_seq)
+        payload = {
+            "consigner": f"收件人{n}",
+            "mobile": f"139{n:08d}"[:11],
+            "address": f"测试路 {n} 号",
+            "idnumber": f"1101011990{n:08d}",
+            **region,
+            **kw,
+        }
+        return api.ok("System.Member.addAddress", payload, token)
+    return _make
+
+
+@pytest.fixture
+def address_id(make_address, token):
+    return make_address(token)["id"]
 
 
 @pytest.fixture(scope="session")
@@ -114,11 +130,13 @@ def make_package(api, token):
     所以默认让两者不一样，免得测试在"用错了字段"的情况下照样通过。
     """
     def _make(netwt="2.0", inbound=False, actual_weight=None, **kw):
+        # 申报价值默认压低：两条线路按申报价值卡准入，默认值太高会撞上
+        # 「精致小」的 ¥400 上限，让每个测试都得额外操心这件事。
         pkg = api.ok("System.Order.addforecast", {
             "express_num": f"TEST{uuid.uuid4().hex[:10].upper()}",
             "good_name": "测试商品",
             "netwt": netwt,
-            "price": "1000",
+            "price": "100",
             **kw,
         }, token)
         if inbound:

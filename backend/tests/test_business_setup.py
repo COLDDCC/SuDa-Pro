@@ -48,10 +48,13 @@ def test_warehouse_matches_the_config_file(api, token):
 
 
 def test_lines_match_the_config_file(api):
-    lines = api.ok("System.Address.lineList")
-    assert [l["name"] for l in lines] == [l["name"] for l in business.LINES]
-    for got, cfg in zip(lines, business.LINES):
-        assert float(got["price_per_kg"]) == float(cfg["price_per_kg"])
+    lines = {l["name"]: l for l in api.ok("System.Address.lineList")}
+    assert set(lines) == {l["name"] for l in business.LINES}
+    for cfg in business.LINES:
+        got = lines[cfg["name"]]
+        for field in ("first_weight", "first_fee", "step_weight", "step_fee"):
+            assert float(got[field]) == float(cfg[field]), f"{cfg['name']} 的 {field} 没同步"
+        assert float(got["max_declared_value"]) == float(cfg["max_declared_value"])
 
 
 def test_site_name_comes_from_the_config_file(api):

@@ -1,10 +1,13 @@
+import csv
 import hmac
+import io
 import logging
 import os
 import shutil
 import uuid
 
 from fastapi import FastAPI, Depends, Request, UploadFile, File, Form
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -13,12 +16,17 @@ from .config import (
     ALLOWED_ORIGINS, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, STAFF_KEY,
     UPLOAD_DIR, UPLOAD_URL_PREFIX, check_production_config,
 )
-from .database import Base, engine, get_db
+from .database import Base, engine, get_db, SessionLocal
+from . import migrate
 from .images import BadImage, compress
 from .router import resolve, MethodNotFound
 from .errors import ApiError
 from .auth import get_current_member
-from . import seed
+from . import models, seed
+
+STATUS_CN = {
+    "pending": "待发货", "shipped": "运输中", "signed": "已签收", "closed": "已关闭",
+}
 
 logger = logging.getLogger("suda")
 
@@ -27,6 +35,8 @@ logger = logging.getLogger("suda")
 check_production_config()
 
 Base.metadata.create_all(bind=engine)
+# 已有的表补上新增的列。试运营阶段字段一直在加，不能每次都让人删库重来。
+migrate.run()
 
 app = FastAPI(title="XX转运Pro API")
 
@@ -92,6 +102,64 @@ async def upload_image(file: UploadFile = File(...), staff_key: str = Form("")):
         f.write(body)
 
     return {"code": 0, "msg": "ok", "data": {"url": f"{UPLOAD_URL_PREFIX}/{name}"}}
+
+
+@app.get("/export/orders.csv")
+def export_orders(staff_key: str = "", status: str = ""):
+    """订单导出 CSV，拿去飞书多维表格里「导入」就能对账。
+
+    为什么是 CSV 而不是对接飞书表格 API：多维表格 API 要创建应用、管
+    app_id/app_secret、还要处理字段映射。试运营阶段用不着，下载一个文件拖进去
+    更快，也不会因为 token 过期在半夜挂掉。
+    """
+    if not STAFF_KEY or not hmac.compare_digest(staff_key or "", STAFF_KEY):
+        return Response("无权限", status_code=403, media_type="text/plain; charset=utf-8")
+
+    db = SessionLocal()
+    try:
+        q = db.query(models.Order)
+        if status:
+            q = q.filter(models.Order.status == status)
+        orders = q.order_by(models.Order.id.desc()).limit(5000).all()
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow([
+            "订单号", "状态", "下单时间", "会员代码", "会员昵称", "会员手机",
+            "线路", "计费重量kg", "件数", "总金额", "运费", "拍照费", "囤货费",
+            "收件人", "收件电话", "身份证号", "收件地址", "国际转运单号", "发货时间", "备注",
+        ])
+        for o in orders:
+            fees = {f.fee_type: f.amount for f in o.fees}
+            a = o.address
+            w.writerow([
+                o.order_no, STATUS_CN.get(o.status, o.status),
+                o.created_at.strftime("%Y-%m-%d %H:%M"),
+                o.member.cn_code if o.member else "",
+                o.member.nickname if o.member else "",
+                o.member.mobile if o.member else "",
+                o.line.name if o.line else "",
+                o.total_weight, len(o.items), o.total_fee,
+                fees.get("shipping", ""), fees.get("photo", ""), fees.get("storage", ""),
+                a.consigner if a else "", a.mobile if a else "",
+                # 身份证号是敏感信息，但报关对账就是要核它，而这个接口本来就只有
+                # 拿着 staff_key 的人能调。
+                a.idnumber if a else "",
+                (f"{a.province_name}{a.city_name}{a.district_name}{a.address}" if a else ""),
+                o.inter_order,
+                o.shipped_at.strftime("%Y-%m-%d %H:%M") if o.shipped_at else "",
+                o.remark,
+            ])
+    finally:
+        db.close()
+
+    # 带 BOM：不然 Excel 和飞书表格打开中文会是乱码
+    body = "\ufeff" + buf.getvalue()
+    return Response(
+        body.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="orders.csv"'},
+    )
 
 
 @app.on_event("startup")

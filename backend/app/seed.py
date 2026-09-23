@@ -37,8 +37,15 @@ def _sync_lines(db):
             line = models.Line(shop_id=1, name=name)
             db.add(line)
         line.description = cfg["description"]
-        line.price_per_kg = Decimal(str(cfg["price_per_kg"]))
-        line.min_weight = Decimal(str(cfg["min_weight"]))
+        line.first_weight = Decimal(str(cfg["first_weight"]))
+        line.first_fee = Decimal(str(cfg["first_fee"]))
+        line.step_weight = Decimal(str(cfg["step_weight"]))
+        line.step_fee = Decimal(str(cfg["step_fee"]))
+        line.min_declared_value = Decimal(str(cfg["min_declared_value"]))
+        line.max_declared_value = (
+            None if cfg["max_declared_value"] is None
+            else Decimal(str(cfg["max_declared_value"]))
+        )
         line.days_min = cfg["days_min"]
         line.days_max = cfg["days_max"]
         line.is_active = True

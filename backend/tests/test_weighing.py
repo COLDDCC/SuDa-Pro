@@ -10,7 +10,24 @@ import pytest
 from .conftest import STAFF_KEY
 
 
-def test_billing_uses_warehouse_weight_not_user_declared(api, token, region, address_id,
+def quote(line, weight):
+    """按线路的首重+续重规则算运费。测试里独立实现一遍，才能真正验出后端算错。
+
+    运费 = 首重费 + ceil((重量 - 首重) / 续重单位) × 续重费
+
+    全部换算成"克"用整数算：Decimal 的 // 是向零截断不是向下取整，直接拿它做
+    向上取整会少算一档（这个坑刚踩过）。整数 // 才是真的 floor。
+    """
+    grams = lambda x: int(Decimal(str(x)) * 1000)
+    w, first, step = grams(weight), grams(line["first_weight"]), grams(line["step_weight"])
+    fee = Decimal(line["first_fee"])
+    if w > first:
+        steps = -(-(w - first) // step)              # 整数向上取整
+        fee += steps * Decimal(line["step_fee"])
+    return fee
+
+
+def test_billing_uses_warehouse_weight_not_user_declared(api, token, address_id,
                                                          line, line_id, make_package):
     """核心防回归：用户填 0.1kg，仓库称出 10kg，必须按 10kg 收钱。"""
     pkg = make_package(netwt="0.1", inbound=True, actual_weight="10")
@@ -21,8 +38,8 @@ def test_billing_uses_warehouse_weight_not_user_declared(api, token, region, add
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
 
-    expected = Decimal("10") * Decimal(line["price_per_kg"])
-    assert Decimal(order["total_fee"]) == expected, "运费没按仓库称重算"
+    assert Decimal(order["total_fee"]) == quote(line, "10"), "运费没按仓库称重算"
+    assert Decimal(order["total_fee"]) != quote(line, "0.1"), "按用户填的重量收了"
 
 
 def test_inbound_requires_a_weight(api, make_package, token):
@@ -76,7 +93,7 @@ def test_reweigh_needs_staff_key(api, make_package, token):
 
 
 def test_consolidation_sums_warehouse_weights(api, token, address_id, line, line_id, make_package):
-    """合箱：多个包裹合成一单，按各自称重之和计费。"""
+    """合箱：多个包裹合成一单，按各自称重之和计一次首重，不是每件都收首重。"""
     pkgs = [make_package(netwt="0.1", inbound=True, actual_weight=w) for w in ("1.5", "2.25", "3")]
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id,
@@ -86,14 +103,31 @@ def test_consolidation_sums_warehouse_weights(api, token, address_id, line, line
     detail = api.ok("System.Order.orderDetail", {"order_id": order["order_id"]}, token)
     assert Decimal(detail["total_weight"]) == Decimal("6.75")
     assert len(detail["packages"]) == 3
-    assert Decimal(order["total_fee"]) == Decimal("6.75") * Decimal(line["price_per_kg"])
+    assert Decimal(order["total_fee"]) == quote(line, "6.75")
+
+    # 合箱要比分开寄便宜，否则合箱这个功能就没意义了
+    separately = sum(quote(line, w) for w in ("1.5", "2.25", "3"))
+    assert Decimal(order["total_fee"]) < separately
 
 
-def test_min_weight_floor_is_applied(api, token, address_id, line, line_id, make_package):
-    """线路有最低计费重量，低于它按最低收。"""
-    tiny = Decimal(line["min_weight"]) / 2
+def test_below_first_weight_is_charged_the_first_weight_fee(api, token, address_id,
+                                                            line, line_id, make_package):
+    """比首重还轻也按首重收，这是首重的定义。"""
+    tiny = Decimal(line["first_weight"]) / 2
     pkg = make_package(inbound=True, actual_weight=str(tiny))
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
-    assert Decimal(order["total_fee"]) == Decimal(line["min_weight"]) * Decimal(line["price_per_kg"])
+    assert Decimal(order["total_fee"]) == Decimal(line["first_fee"])
+
+
+def test_a_gram_over_the_first_weight_costs_a_whole_step(api, token, address_id,
+                                                        line, line_id, make_package):
+    """续重向上取整：超出 10 克也按一整档收。物流商就是这么跟我们算的，
+    系统必须一致，否则这部分差价得我们自己贴。"""
+    over = Decimal(line["first_weight"]) + Decimal("0.01")
+    pkg = make_package(inbound=True, actual_weight=str(over))
+    order = api.ok("System.Order.savePage", {
+        "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
+    }, token)
+    assert Decimal(order["total_fee"]) == Decimal(line["first_fee"]) + Decimal(line["step_fee"])

@@ -58,16 +58,16 @@ def test_full_shipping_flow(api, token, address_id, line_id, make_package):
     assert len(api.ok("System.Order.selectTrack", {"express_num": "TEST-INTER-0001"}, token)) == 3
 
 
-def test_fee_equals_weight_times_line_price(api, token, address_id, line, line_id, make_package):
-    """下单金额必须和运费计算器给客户看的报价一致，不然就是当面一套背后一套。"""
-    pkg = make_package(netwt="3", inbound=True)
-    quote = {l["name"]: l["fee"] for l in api.ok("System.Address.estimateFee", {"weight": "3"})}
-    line_name = line["name"]
+def test_order_total_matches_the_public_fee_calculator(api, token, address_id, line,
+                                                       line_id, make_package):
+    """首页运费计算器报的价，和真下单扣的钱必须一致，不然就是当面一套背后一套。"""
+    pkg = make_package(netwt="3", inbound=True, actual_weight="3")
+    quoted = {l["name"]: l["fee"] for l in api.ok("System.Address.estimateFee", {"weight": "3"})}
 
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
-    assert order["total_fee"] == quote[line_name]
+    assert order["total_fee"] == quoted[line["name"]]
 
 
 def test_close_order_returns_packages_to_inbound(api, token, address_id, line_id, make_package):
@@ -96,12 +96,16 @@ def test_shipped_order_cannot_be_closed(api, token, address_id, line_id, make_pa
     api.fail("System.Order.orderClose", {"order_id": order["order_id"]}, token)
 
 
-def test_order_list_pagination(api, token, address_id, line_id, make_package):
-    """第二页曾经因为漏了 offset 而永远看不到，这里钉住分页行为。"""
+def test_order_list_pagination(api, token, make_address, line_id, make_package):
+    """第二页曾经因为漏了 offset 而永远看不到，这里钉住分页行为。
+
+    每单用不同的收件人：大连港清关要求同一航次里身份证/地址/电话都不能重复。
+    """
     for _ in range(3):
         pkg = make_package(inbound=True)
         api.ok("System.Order.savePage", {
-            "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
+            "address_id": make_address(token)["id"],
+            "line_id": line_id, "package_ids": [pkg["id"]],
         }, token)
 
     page1 = api.ok("System.Order.order", {"page": 1, "page_size": 2}, token)
