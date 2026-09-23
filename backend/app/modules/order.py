@@ -547,9 +547,10 @@ def _resolve_order_inputs(db, member, params):
         if p.billable_weight is None:
             raise ApiError(f"包裹「{p.good_name}」还没称重，请联系客服")
 
-    # 申报价值准入：两条线的区别不在重量而在价值，走错线会卡在海关。
+    # 申报价值准入。默认不强制（实际清关查得不严，硬拦只会把客诉推给客服），
+    # 但拦截逻辑留着——物流商哪天开始卡了，把 business 里那个开关打开就生效。
     value = _declared_value(packages)
-    if not line.accepts_value(value):
+    if business.ENFORCE_DECLARED_VALUE_LIMIT and not line.accepts_value(value):
         raise ApiError(
             f"这一单申报价值 ¥{models._trim(value)}，不在「{line.name}」的"
             f"{line.value_range_text()}范围内，请换一条线路，或者拆成两单分别发"

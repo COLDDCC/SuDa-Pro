@@ -51,7 +51,12 @@ Page({
       return;
     }
     call('System.Address.estimateFee', { weight })
-      .then((result) => this.setData({ feeResult: result }))
+      .then((result) => // 后端已按价格升序返回。两条线各有便宜的区间（精致小每 0.5kg 跳 ¥35 跳得粗，
+        // 无忧草每 0.1kg 跳 ¥8 跳得细，刚跳完档那一段无忧草反而赢），所以哪条更划算
+        // 得看具体重量，直接把最便宜的标出来，省得用户自己比。
+        this.setData({
+          feeResult: result.map((r, i) => ({ ...r, cheapest: i === 0 && result.length > 1 })),
+        }))
       .catch(() => {});
   },
 

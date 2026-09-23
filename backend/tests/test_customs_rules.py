@@ -16,11 +16,50 @@ def lines(api):
     return {l["name"]: l for l in api.ok("System.Address.lineList")}
 
 
-# ---- 申报价值准入 ----
+# ---- 申报价值：默认只建议，不拦截 ----
+#
+# 实际清关查得不严，而且申报价值怎么算本身就没有一刀切的答案，所以默认不强制。
+# 但拦截逻辑要留着并且保持能用——物流商哪天开始卡了，打开开关就得立刻生效。
 
-def test_high_value_parcel_cannot_use_the_cheap_line(api, token, address_id,
-                                                     lines, make_package):
-    """「精致小」只收 ¥400 以内的，超了必须走「无忧草」，否则卡海关。"""
+
+@pytest.fixture
+def strict(monkeypatch):
+    """把申报价值限制打开。"""
+    monkeypatch.setattr(business, "ENFORCE_DECLARED_VALUE_LIMIT", True)
+
+
+def test_by_default_users_pick_whatever_line_they_want(api, token, address_id,
+                                                       lines, make_package):
+    """默认不拦：¥800 的包裹走「精致小」也能下单。"""
+    pkg = make_package(inbound=True, actual_weight="0.5", price="800")
+    order = api.ok("System.Order.savePage", {
+        "address_id": address_id, "line_id": lines["精致小"]["id"],
+        "package_ids": [pkg["id"]],
+    }, token)
+    assert order["order_no"]
+
+
+def test_default_allows_a_tiny_parcel_on_the_pricier_line(api, token, address_id,
+                                                          lines, make_package):
+    """便宜东西想买「无忧草」的包清关也随他。"""
+    pkg = make_package(inbound=True, actual_weight="1.5", price="50")
+    assert api.ok("System.Order.savePage", {
+        "address_id": address_id, "line_id": lines["无忧草"]["id"],
+        "package_ids": [pkg["id"]],
+    }, token)["order_no"]
+
+
+def test_lines_still_publish_their_suggested_value_range(api, lines):
+    """不拦不代表不说。用户得看得到每条线建议什么价位，才知道怎么选。"""
+    assert "400" in lines["精致小"]["value_range"]
+    assert "400" in lines["无忧草"]["value_range"]
+    assert "建议" in lines["精致小"]["value_range"], "措辞得是建议，不是硬限制"
+
+
+# ---- 开关打开后要真的拦得住 ----
+
+def test_strict_mode_blocks_a_high_value_parcel_on_the_cheap_line(api, token, address_id,
+                                                                  lines, make_package, strict):
     pkg = make_package(inbound=True, actual_weight="0.5", price="800")
     resp = api.fail("System.Order.savePage", {
         "address_id": address_id, "line_id": lines["精致小"]["id"],
@@ -30,38 +69,17 @@ def test_high_value_parcel_cannot_use_the_cheap_line(api, token, address_id,
     assert "800" in resp["msg"], "报错要说清楚这一单是多少钱，用户才知道怎么办"
 
 
-def test_high_value_parcel_goes_through_on_the_right_line(api, token, address_id,
-                                                          lines, make_package):
+def test_strict_mode_still_lets_the_right_line_through(api, token, address_id,
+                                                       lines, make_package, strict):
     pkg = make_package(inbound=True, actual_weight="0.5", price="800")
-    order = api.ok("System.Order.savePage", {
+    assert api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": lines["无忧草"]["id"],
         "package_ids": [pkg["id"]],
-    }, token)
-    assert order["order_no"]
+    }, token)["order_no"]
 
 
-def test_low_value_parcel_cannot_use_the_high_value_line(api, token, address_id,
-                                                         lines, make_package):
-    """「无忧草」下限 ¥400，几十块的小东西走它是浪费钱，也不符合物流商的规则。"""
-    pkg = make_package(inbound=True, actual_weight="1.5", price="50")
-    api.fail("System.Order.savePage", {
-        "address_id": address_id, "line_id": lines["无忧草"]["id"],
-        "package_ids": [pkg["id"]],
-    }, token)
-
-
-def test_over_the_top_line_limit_is_rejected_everywhere(api, token, address_id,
-                                                        lines, make_package):
-    """超过 ¥1000 两条线都不收，只能拆单。"""
-    pkg = make_package(inbound=True, actual_weight="1", price="2000")
-    for line in lines.values():
-        api.fail("System.Order.savePage", {
-            "address_id": address_id, "line_id": line["id"], "package_ids": [pkg["id"]],
-        }, token)
-
-
-def test_declared_value_sums_across_a_consolidated_order(api, token, address_id,
-                                                         lines, make_package):
+def test_strict_mode_sums_value_across_a_consolidated_order(api, token, address_id,
+                                                            lines, make_package, strict):
     """合箱时海关看的是整票价值，不是单件。三件 ¥200 合起来就 ¥600 了。"""
     pkgs = [make_package(inbound=True, actual_weight="0.2", price="200") for _ in range(3)]
     ids = [p["id"] for p in pkgs]
@@ -74,8 +92,8 @@ def test_declared_value_sums_across_a_consolidated_order(api, token, address_id,
     }, token)
 
 
-def test_declared_value_falls_back_to_goods_price(api, token, address_id,
-                                                  lines, make_package):
+def test_strict_mode_falls_back_to_goods_price(api, token, address_id,
+                                               lines, make_package, strict):
     """用户没单独填申报价值时用商品价值，总比报 0 强——报 0 更容易被查。"""
     pkg = make_package(inbound=True, actual_weight="0.5", price="900")
     assert "900" in api.fail("System.Order.savePage", {
@@ -83,9 +101,9 @@ def test_declared_value_falls_back_to_goods_price(api, token, address_id,
     }, token)["msg"]
 
 
-def test_explicit_declared_value_wins_over_goods_price(api, token, address_id,
-                                                       lines, make_package):
-    """填了海关申报价就用它。"""
+def test_strict_mode_prefers_the_explicit_declared_value(api, token, address_id,
+                                                         lines, make_package, strict):
+    """填了海关申报价就用它，不用商品价值。"""
     pkg = make_package(inbound=True, actual_weight="0.5",
                        price="900", cc_registered_price="300")
     api.ok("System.Order.savePage", {

@@ -148,10 +148,12 @@ class Line(Base):
         return True
 
     def value_range_text(self) -> str:
+        """建议的适用价值区间。是建议不是硬限制——是否强制由
+        business.ENFORCE_DECLARED_VALUE_LIMIT 决定，默认不强制。"""
         lo = _trim(self.min_declared_value or 0)
         if self.max_declared_value is None:
-            return f"申报价值 ¥{lo} 以上"
-        return f"申报价值 ¥{lo}–¥{_trim(self.max_declared_value)}"
+            return f"建议申报价值 ¥{lo} 以上"
+        return f"建议申报价值 ¥{lo}–¥{_trim(self.max_declared_value)}"
 
 
 class Notice(Base):
