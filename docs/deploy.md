@@ -194,8 +194,12 @@ docker compose cp api:/data/uploads ./photos-backup-$(date +%F)
 > `docker compose down` 不会删它，但 `docker compose down -v` **会连数据一起删掉**，
 > 别手滑。
 
-> 照片会越攒越多，留意磁盘。`du -sh` 看一眼：
+> 照片会越攒越多，留意磁盘。看一眼：
 > `docker compose exec api du -sh /data/uploads`
+>
+> 上传时已经压过（长边 2000px，一张约 300-600KB），500 个用户量级下
+> 一年也就几个 GB，最低配服务器完全够。磁盘剩余低于 500MB 时上传会自动拒绝，
+> 不会把数据库一起拖下水。
 
 ## 9. 什么时候该升级
 

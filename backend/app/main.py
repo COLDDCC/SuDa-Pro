@@ -1,6 +1,7 @@
 import hmac
 import logging
 import os
+import shutil
 import uuid
 
 from fastapi import FastAPI, Depends, Request, UploadFile, File, Form
@@ -13,6 +14,7 @@ from .config import (
     UPLOAD_DIR, UPLOAD_URL_PREFIX, check_production_config,
 )
 from .database import Base, engine, get_db
+from .images import BadImage, compress
 from .router import resolve, MethodNotFound
 from .errors import ApiError
 from .auth import get_current_member
@@ -46,6 +48,11 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount(UPLOAD_URL_PREFIX, StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
+# 磁盘留多少余量就拒绝继续上传。照片和 SQLite 在同一个卷上，磁盘真写满了
+# 数据库也会跟着写不进去——下单、入库、发货全挂。宁可先拒绝传照片。
+MIN_FREE_BYTES = 500 * 1024 * 1024
+
+
 @app.post("/upload")
 async def upload_image(file: UploadFile = File(...), staff_key: str = Form("")):
     """仓库上传包裹照片。
@@ -53,21 +60,31 @@ async def upload_image(file: UploadFile = File(...), staff_key: str = Form("")):
     图片是 multipart，塞不进 /api 那套 {method, params} 的 JSON 里，所以单开一个
     端点。权限和其他仓库操作一样用 staff_key（拍照是仓库的活，不是用户的）。
 
-    返回的 url 拿去调 System.Order.addPackagePhoto 挂到具体包裹上。
+    收下来的图会统一压缩（见 images.py），返回的 url 拿去调
+    System.Order.addPackagePhoto 挂到具体包裹上。
     """
     if not STAFF_KEY or not hmac.compare_digest(staff_key or "", STAFF_KEY):
         return {"code": 403, "msg": "无权限执行该操作", "data": None}
 
-    ext = ALLOWED_IMAGE_TYPES.get((file.content_type or "").lower())
-    if ext is None:
+    if (file.content_type or "").lower() not in ALLOWED_IMAGE_TYPES:
         return {"code": 400, "msg": "只支持 JPG / PNG / WebP 图片", "data": None}
 
-    # 一次读完但先看大小：手机直出照片动辄十几 MB，不设上限的话磁盘很快被塞满。
+    # 先看大小再收：手机直出照片动辄十几 MB，不设上限的话磁盘很快被塞满。
     body = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(body) > MAX_UPLOAD_BYTES:
         return {"code": 400, "msg": f"图片太大了（上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB）", "data": None}
     if not body:
         return {"code": 400, "msg": "图片是空的", "data": None}
+
+    if shutil.disk_usage(UPLOAD_DIR).free < MIN_FREE_BYTES:
+        logger.error("磁盘空间不足，拒绝上传图片：%s", UPLOAD_DIR)
+        return {"code": 507, "msg": "服务器存储空间不足，请联系管理员清理", "data": None}
+
+    # 真正解码一遍再存：Content-Type 是客户端说了算的，不能拿它当数据校验。
+    try:
+        body, ext = compress(body)
+    except BadImage as e:
+        return {"code": 400, "msg": str(e), "data": None}
 
     # 文件名自己生成，绝不用客户端传来的 filename —— 那里面可能带 ../ 跑出目录。
     name = f"{uuid.uuid4().hex}{ext}"
