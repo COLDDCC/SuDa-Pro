@@ -1,6 +1,9 @@
 {
   "description": "XX转运Pro 小程序",
-  "packOptions": { "ignore": [], "include": [] },
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
   "setting": {
     "urlCheck": false,
     "es6": true,
@@ -38,7 +41,7 @@
   },
   "compileType": "miniprogram",
   "libVersion": "3.0.0",
-  "appid": "touristappid",
+  "appid": "wx48aef7da6d3d6b6a",
   "projectname": "SuDa-Pro",
   "condition": {}
 }
