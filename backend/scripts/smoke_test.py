@@ -19,6 +19,14 @@ import sys
 import urllib.error
 import urllib.request
 
+# 中文 Windows 控制台默认是 GBK，而这个脚本会打印 ¥ 和 ✔ —— 这两个字符 GBK 里
+# 根本没有，直接 print 会抛 UnicodeEncodeError，脚本第一行就崩。强制按 UTF-8 输出。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass                      # 老 Python 或被重定向过，忽略
+
 BASE_URL = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("BASE_URL", "http://127.0.0.1:8811")
 STAFF_KEY = os.environ.get("STAFF_KEY", "")
 

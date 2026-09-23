@@ -133,7 +133,6 @@ def export_orders(staff_key: str = "", status: str = ""):
         ])
         for o in orders:
             fees = {f.fee_type: f.amount for f in o.fees}
-            a = o.address
             w.writerow([
                 o.order_no, STATUS_CN.get(o.status, o.status),
                 o.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -145,11 +144,12 @@ def export_orders(staff_key: str = "", status: str = ""):
                 o.line.name if o.line else "",
                 o.total_weight, len(o.items), o.total_fee,
                 fees.get("shipping", ""), fees.get("photo", ""), fees.get("storage", ""),
-                a.consigner if a else "", a.mobile if a else "",
+                # 读订单上的快照而不是地址表：用户下完单改了地址，报关记录不该跟着变。
+                o.consignee_name, o.consignee_mobile,
                 # 身份证号是敏感信息，但报关对账就是要核它，而这个接口本来就只有
                 # 拿着 staff_key 的人能调。
-                a.idnumber if a else "",
-                (f"{a.province_name}{a.city_name}{a.district_name}{a.address}" if a else ""),
+                o.consignee_idnumber,
+                o.consignee_address,
                 o.inter_order,
                 o.shipped_at.strftime("%Y-%m-%d %H:%M") if o.shipped_at else "",
                 o.remark,

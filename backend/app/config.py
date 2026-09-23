@@ -8,7 +8,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_ENV = os.environ.get("APP_ENV", "dev").strip().lower()
 IS_PRODUCTION = APP_ENV in ("prod", "production")
 
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR}/suda.db")
+# Windows 下 BASE_DIR 是 C:\Users\... ，直接拼进 URL 会混用两种分隔符。
+# SQLite 在 Windows 上也认正斜杠，统一换掉最保险。
+_DEFAULT_DB_PATH = os.path.join(BASE_DIR, "suda.db").replace("\\", "/")
+DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{_DEFAULT_DB_PATH}")
 
 # WeChat Mini Program credentials. Leave SECRET empty to use the dev-login
 # fallback (System.Login.devLogin) instead of the real code2Session call.

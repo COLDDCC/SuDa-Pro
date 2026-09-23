@@ -148,3 +148,42 @@ def test_default_address_is_unique(api, token, region):
     api.ok("System.Member.addAddress", {**base, "address": "默认路 2 号"}, token)
     defaults = [a for a in api.ok("System.Member.memberAddressList", {}, token) if a["is_default"]]
     assert len(defaults) == 1
+
+
+def test_same_tracking_number_cannot_be_forecast_twice(api, token):
+    """用户以为上次没提交成功又填一遍。放过去的话仓库会看到两条一模一样的记录，
+    不知道该入库哪个。"""
+    api.ok("System.Order.addforecast",
+           {"express_num": "DUPCHECK001", "good_name": "同一个箱子"}, token)
+    resp = api.fail("System.Order.addforecast",
+                    {"express_num": "DUPCHECK001", "good_name": "同一个箱子"}, token)
+    assert "已经预报过" in resp["msg"]
+
+
+def test_two_members_can_use_the_same_tracking_number(api, token, other_token):
+    """去重只在同一个会员内部生效——不同的人碰巧撞单号不该互相挡住。"""
+    api.ok("System.Order.addforecast",
+           {"express_num": "SHARED001", "good_name": "我的"}, token)
+    api.ok("System.Order.addforecast",
+           {"express_num": "SHARED001", "good_name": "别人的"}, other_token)
+
+
+def test_the_same_package_cannot_be_selected_twice_in_one_order(api, token, address_id,
+                                                                line_id, make_package):
+    pkg = make_package(inbound=True, actual_weight="1")
+    resp = api.fail("System.Order.savePage", {
+        "address_id": address_id, "line_id": line_id,
+        "package_ids": [pkg["id"], pkg["id"]],
+    }, token)
+    assert "只能选一次" in resp["msg"]
+
+
+def test_closing_a_closed_order_says_so(api, token, address_id, line_id, make_package):
+    """之前这里报的是"订单已发货"，说的不是真实原因。"""
+    pkg = make_package(inbound=True, actual_weight="1")
+    order = api.ok("System.Order.savePage", {
+        "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
+    }, token)
+    api.ok("System.Order.orderClose", {"order_id": order["order_id"]}, token)
+    assert "已经关闭" in api.fail("System.Order.orderClose",
+                                  {"order_id": order["order_id"]}, token)["msg"]

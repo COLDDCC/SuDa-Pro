@@ -13,9 +13,13 @@ miniprogram/    微信小程序原生前端，10 个页面覆盖 MVP 全流程
 deploy/         一台服务器 + 一个域名就能上线的 docker compose 配置
 docs/plan.md    项目计划书 + 竞品接口清单
 docs/deploy.md  上线手册：买服务器 → 配域名 → HTTPS → 小程序提审
+docs/windows-start.md  Windows 上从装 Python 开始，到手机能测，一步一步
 ```
 
 ## 快速开始
+
+> **Windows 用户、没碰过命令行**：直接看 [`docs/windows-start.md`](docs/windows-start.md)，
+> 从装 Python 讲到手机上能测，每一步都有验证方法。下面这节假设你已经熟悉终端。
 
 ### 1. 启动后端
 

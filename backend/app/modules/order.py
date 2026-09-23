@@ -99,6 +99,16 @@ def addforecast(db, member, params):
     if not good_name:
         raise ApiError("请填写品名")
 
+    # 同一个单号重复预报：用户以为上次没成功，又填了一遍。放过去的话仓库会看到
+    # 两条一模一样的记录，不知道该入库哪个。
+    dup = db.query(models.Package).filter(
+        models.Package.member_id == member.id,
+        models.Package.express_num == express_num,
+        models.Package.status != models.Package.STATUS_CANCELLED,
+    ).first()
+    if dup:
+        raise ApiError(f"这个单号你已经预报过了（{dup.good_name}），不用重复提交")
+
     count = _to_int(params.get("count"), 1, "数量")
     netwt = _to_decimal(params.get("netwt"), "0", "净重")
     price = _to_decimal(params.get("price"), "0", "商品价值")
@@ -349,13 +359,12 @@ def staffOrders(db, member, params):
     _require_staff(params)
     status = params.get("status", "pending")
     rows = db.query(models.Order).filter_by(status=status).order_by(models.Order.id.desc()).all()
-    from .member import _addr_dict
     return [{
         **_order_summary(o),
         "member_nickname": o.member.nickname,
         "member_mobile": o.member.mobile,
         "member_code": o.member.cn_code,
-        "address": _addr_dict(o.address),
+        "address": _order_address(o),
         # 收款时要看得到钱是怎么构成的，客户问起来能立刻答上
         "fees": [{"name": f.name, "detail": f.detail, "amount": str(f.amount)}
                  for f in sorted(o.fees, key=lambda x: x.id)],
@@ -538,8 +547,10 @@ def _resolve_order_inputs(db, member, params):
         models.Package.id.in_(package_ids),
         models.Package.member_id == member.id,
     ).all()
+    if len(set(package_ids)) != len(package_ids):
+        raise ApiError("同一个包裹只能选一次")
     if len(packages) != len(package_ids):
-        raise ApiError("包裹信息有误")
+        raise ApiError("有包裹不存在或不属于你，请刷新后重试")
 
     for p in packages:
         # 只有已入库的包裹能下单。还没到仓的东西既没称重也没法合箱打包，
@@ -566,38 +577,41 @@ def _resolve_order_inputs(db, member, params):
 def _check_consignee_not_reused(db, member, address, exclude_order_id=None):
     """同一航次里身份证、地址、电话都不能重复，否则整票会被海关卡住。
 
-    没有航次表，就用"还没发出的订单"近似当前航次——它们会一起走下一班。
-    检查范围是所有会员，不只是自己：海关看的是实名信息本身，不管是谁下的单。
+    没有航次表，就用"还没发出的订单"近似当前航次——待付款和已付款都还没发出，
+    都会挤在下一班。检查范围是所有会员，不只是自己：海关看的是实名信息本身，
+    不管是谁下的单。
+
+    比的是订单上的**快照**而不是地址表：用户改了地址不该让一单已经占住名额的
+    订单凭空让出位置。
     """
     if not business.ENFORCE_UNIQUE_CONSIGNEE:
         return
 
-    # 待付款和已付款都还没发出，都会挤在下一个航次里，所以两种都要算进来。
-    q = db.query(models.Order).join(models.Address).filter(
+    mine = {
+        "身份证号": (address.idnumber or "").strip(),
+        "手机号": (address.mobile or "").strip(),
+        "详细地址": (f"{address.province_name}{address.city_name}"
+                     f"{address.district_name}{address.address}").strip(),
+    }
+
+    q = db.query(models.Order).filter(
         models.Order.status.in_([models.Order.STATUS_PENDING, models.Order.STATUS_PAID]),
     )
     if exclude_order_id:
         q = q.filter(models.Order.id != exclude_order_id)
 
     for other in q.all():
-        a = other.address
-        if a is None or a.id == address.id:
-            # 同一条地址记录本身也算重复，下面统一报
-            if a is not None and a.id == address.id:
+        theirs = {
+            "身份证号": (other.consignee_idnumber or "").strip(),
+            "手机号": (other.consignee_mobile or "").strip(),
+            "详细地址": (other.consignee_address or "").strip(),
+        }
+        for label, value in mine.items():
+            if value and value == theirs[label]:
                 raise ApiError(
-                    "这个收件地址已经有一个待发货的订单了。"
+                    f"这个{label}已经有一个还没发出的订单了（{other.order_no}）。"
                     f"{business.CUSTOMS_PORT}清关要求同一航次里身份证、地址、电话都不能重复，"
-                    "请等上一单发出后再下，或者换一个收件人"
-                )
-            continue
-        for field, label in (("idnumber", "身份证号"), ("mobile", "手机号"), ("address", "详细地址")):
-            mine = (getattr(address, field) or "").strip()
-            theirs = (getattr(a, field) or "").strip()
-            if mine and mine == theirs:
-                raise ApiError(
-                    f"这个{label}已经有一个待发货的订单了。"
-                    f"{business.CUSTOMS_PORT}清关要求同一航次里身份证、地址、电话都不能重复，"
-                    "请等上一单发出后再下，或者换一个收件人"
+                    "请等上一单发出后再下，或者把包裹合并到那一单里"
                 )
 
 
@@ -713,6 +727,12 @@ def savePage(db, member, params):
     order = models.Order(
         member_id=member.id,
         address_id=address.id,
+        # 快照：之后用户再改地址也不会动到这一单，报关记录保持当时的样子
+        consignee_name=address.consigner,
+        consignee_mobile=address.mobile,
+        consignee_idnumber=address.idnumber,
+        consignee_address=(f"{address.province_name}{address.city_name}"
+                           f"{address.district_name}{address.address}"),
         line_id=line.id,
         shop_id=params.get("shop_id", 1),
         remark=params.get("remark", ""),
@@ -759,6 +779,29 @@ def savePage(db, member, params):
     }
 
 
+def _order_address(o: models.Order):
+    """订单上的收件信息。
+
+    读快照，不读地址表——用户改了地址也不该动到已经下过的单。
+    快照为空说明是加这个字段之前的老订单，退回读地址表。
+    """
+    if o.consignee_name:
+        return {
+            "consigner": o.consignee_name,
+            "mobile": o.consignee_mobile,
+            "idnumber": o.consignee_idnumber,
+            "full_address": o.consignee_address,
+            # 这三个字段前端是拼在一起显示的，快照已经是拼好的整串，
+            # 所以把整串放在 province 上，另两个留空，显示效果不变。
+            "province": o.consignee_address,
+            "city": "",
+            "district": "",
+            "address": "",
+        }
+    from .member import _addr_dict
+    return _addr_dict(o.address) if o.address else {}
+
+
 def _order_summary(o: models.Order):
     return {
         "id": o.id,
@@ -795,10 +838,9 @@ def orderDetail(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
-    from .member import _addr_dict
     return {
         **_order_summary(o),
-        "address": _addr_dict(o.address),
+        "address": _order_address(o),
         "fees": [{
             "fee_type": f.fee_type, "name": f.name, "detail": f.detail,
             "unit_price": str(f.unit_price), "quantity": str(f.quantity),
@@ -816,8 +858,7 @@ def getAddressDetail(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
-    from .member import _addr_dict
-    return _addr_dict(o.address)
+    return _order_address(o)
 
 
 def selectTrack(db, member, params):
@@ -836,10 +877,12 @@ def orderClose(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
+    if o.status == models.Order.STATUS_CLOSED:
+        raise ApiError("这个订单已经关闭了")
     if o.status == models.Order.STATUS_PAID:
         raise ApiError("这个订单已经付款了，需要退款，请联系客服处理")
     if o.status != models.Order.STATUS_PENDING:
-        raise ApiError("订单已发货，无法关闭")
+        raise ApiError("订单已经发出，无法关闭，请联系客服")
     o.status = models.Order.STATUS_CLOSED
     for item in o.items:
         item.package.status = models.Package.STATUS_INBOUND

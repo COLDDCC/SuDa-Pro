@@ -268,6 +268,16 @@ class Order(Base):
     line_id = Column(Integer, ForeignKey("lines.id"), nullable=False)
     shop_id = Column(Integer, default=1)
 
+    # 下单那一刻的收件信息快照。
+    #
+    # 不能只存 address_id 然后实时读地址表：用户下完单去改地址（哪怕只是改个错字），
+    # 已经提交给物流商报关的那一票信息就跟着变了，仓库看到的和实际发出去的对不上，
+    # 同航次实名去重也会因为身份证号变了而失效。报关记录必须是当时的样子。
+    consignee_name = Column(String(32), default="")
+    consignee_mobile = Column(String(20), default="")
+    consignee_idnumber = Column(String(32), default="")
+    consignee_address = Column(String(255), default="")
+
     inter_order = Column(String(64), default="")  # 国际转运单号（发货后填）
     remark = Column(Text, default="")
     status = Column(String(16), default=STATUS_PENDING)
