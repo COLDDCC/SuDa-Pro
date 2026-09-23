@@ -134,7 +134,8 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="packages" onclick="switchTab('packages')">待入库包裹</button>
-  <button class="tab-btn" data-tab="pending-orders" onclick="switchTab('pending-orders')">待发货订单</button>
+  <button class="tab-btn" data-tab="unpaid-orders" onclick="switchTab('unpaid-orders')">待收款 <span id="unpaid-badge" class="badge"></span></button>
+  <button class="tab-btn" data-tab="pending-orders" onclick="switchTab('pending-orders')">待打包发货</button>
   <button class="tab-btn" data-tab="photo-tasks" onclick="switchTab('photo-tasks')">待拍照 <span id="photo-badge" class="badge"></span></button>
   <button class="tab-btn" data-tab="shipped-orders" onclick="switchTab('shipped-orders')">运输中订单</button>
   <button class="tab-btn" data-tab="unclaimed" onclick="switchTab('unclaimed')">无主包裹 <span id="unclaimed-badge" class="badge"></span></button>
@@ -152,8 +153,25 @@
     </table>
   </div>
 
+  <div class="panel" id="panel-unpaid-orders">
+    <div class="toolbar">
+      <button onclick="loadUnpaidOrders()">刷新</button>
+      <a href="/export/orders.csv?status=pending" target="_blank"><button>导出 CSV</button></a>
+      <span class="muted">客户转账到了就点「已收款」。确认之后仓库才能打包发货。</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>订单号</th><th>会员</th><th>金额</th><th>线路/重量</th><th>收件人</th><th>确认收款</th>
+      </tr></thead>
+      <tbody id="unpaid-orders-body"></tbody>
+    </table>
+  </div>
+
   <div class="panel" id="panel-pending-orders">
-    <div class="toolbar"><button onclick="loadPendingOrders()">刷新</button></div>
+    <div class="toolbar">
+      <button onclick="loadPendingOrders()">刷新</button>
+      <span class="muted">这些都是已经收到钱的，可以打包发货了。</span>
+    </div>
     <table>
       <thead><tr>
         <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th>
@@ -265,6 +283,7 @@ function switchTab(tab) {
 function loadActivePanel() {
   const active = document.querySelector('.tab-btn.active').dataset.tab;
   if (active === 'packages') loadPackages();
+  if (active === 'unpaid-orders') loadUnpaidOrders();
   if (active === 'pending-orders') loadPendingOrders();
   if (active === 'photo-tasks') loadPhotoTasks();
   if (active === 'shipped-orders') loadShippedOrders();
@@ -470,12 +489,52 @@ async function loadPhotoTasks() {
   } catch (e) { body.innerHTML = '<tr><td colspan="5" class="empty">加载失败</td></tr>'; }
 }
 
+async function loadUnpaidOrders() {
+  const body = document.getElementById('unpaid-orders-body');
+  body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  try {
+    const list = await call('System.Order.staffOrders', { status: 'pending' });
+    const badge = document.getElementById('unpaid-badge');
+    badge.textContent = list.length || '';
+    badge.style.display = list.length ? 'inline-block' : 'none';
+    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">没有待收款的订单</td></tr>'; return; }
+    body.innerHTML = list.map((o) => `
+      <tr>
+        <td>${escapeHtml(o.order_no)}<div class="muted">${escapeHtml(o.created_at.slice(0, 16).replace('T', ' '))}</div></td>
+        <td>${escapeHtml(o.member_nickname || '')}<div class="muted">${escapeHtml(o.member_mobile || '')}</div></td>
+        <td><strong style="color:#dc2626;">¥${escapeHtml(o.total_fee)}</strong>${feeBreakdown(o)}</td>
+        <td>${escapeHtml(o.line_name)}<div class="muted">${escapeHtml(o.total_weight)}kg / ${o.item_count}件</div></td>
+        <td>${escapeHtml(o.address.consigner)}<div class="muted">${escapeHtml(o.address.mobile)}</div></td>
+        <td>
+          <div class="row-flex">
+            <input class="inline" id="pay-${o.id}" placeholder="收款备注，如微信尾号" style="width: 160px;" />
+            <button onclick="markPaid(${o.id})">已收款</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>'; }
+}
+
+function feeBreakdown(o) {
+  if (!o.fees || !o.fees.length) return '';
+  return `<div class="muted">${o.fees.map((f) => `${escapeHtml(f.name)} ¥${escapeHtml(f.amount)}`).join('<br>')}</div>`;
+}
+
+async function markPaid(id) {
+  const note = (document.getElementById(`pay-${id}`) || {}).value || '';
+  if (!confirm('确认已经收到这一单的运费？确认后仓库就可以发货了。')) return;
+  await call('System.Order.markPaid', { id, payment_note: note.trim() });
+  toast('已确认收款，可以打包发货了');
+  loadUnpaidOrders();
+}
+
 async function loadPendingOrders() {
   const body = document.getElementById('pending-orders-body');
   body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
   try {
-    const list = await call('System.Order.staffOrders', { status: 'pending' });
-    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无待发货订单</td></tr>'; return; }
+    const list = await call('System.Order.staffOrders', { status: 'paid' });
+    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无待打包订单（要先在「待收款」里确认收款）</td></tr>'; return; }
     body.innerHTML = list.map((o) => `
       <tr>
         <td>${escapeHtml(o.order_no)}</td>

@@ -4,6 +4,24 @@
     <view class="tag {{order.statusInfo.cls}}">{{order.statusInfo.text}}</view>
   </view>
 
+  <view class="card" wx:if="{{order.status === 'pending'}}" style="border-left: 8rpx solid #f59e0b;">
+    <view class="section-title">待付款 ¥{{order.total_fee}}</view>
+    <view class="muted">
+      运费由客服线下收取。加客服微信把订单号发过去，客服会发收款码给你；
+      收款确认后仓库就开始打包发货。
+    </view>
+    <view class="row" style="margin-top: 16rpx;" wx:if="{{service.wechat}}" bindtap="onCopyWechat">
+      <view class="muted">客服微信</view>
+      <view>{{service.wechat}} <text style="color: #2b6cff;">复制</text></view>
+    </view>
+    <button class="btn-outline" style="margin-top: 16rpx;" bindtap="onCopyOrderNo">复制订单号</button>
+  </view>
+
+  <view class="card" wx:if="{{order.status === 'paid'}}" style="border-left: 8rpx solid #4f46e5;">
+    <view class="section-title">已收到款，等待仓库打包</view>
+    <view class="muted">仓库会尽快打包并安排最近一班航班，发出后这里会显示国际转运单号。</view>
+  </view>
+
   <view class="card" wx:if="{{order.inter_order}}">
     <view class="section-title">国际转运单号</view>
     <view>{{order.inter_order}}</view>

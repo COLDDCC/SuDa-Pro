@@ -166,13 +166,14 @@ def test_the_rule_spans_different_members(api, token, other_token, make_address,
     }, other_token)
 
 
-def test_once_the_first_order_ships_the_slot_frees_up(api, token, address_id,
-                                                      line_id, make_package):
+def test_once_the_first_order_ships_the_slot_frees_up(api, token, address_id, line_id,
+                                                      make_package, confirm_payment):
     """上一单发出去了就换航次了，同一个收件人可以再下一单。"""
     first = make_package(inbound=True)
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [first["id"]],
     }, token)
+    confirm_payment(order["order_id"])
     api.ok("System.Order.markShipped", {
         "order_id": order["order_id"], "inter_order": "FLIGHT-1", "staff_key": STAFF_KEY,
     })

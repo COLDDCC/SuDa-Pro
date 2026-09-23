@@ -16,6 +16,12 @@ Page({
     declaredValue: '0',
   },
 
+  onLoad(query) {
+    // 从首页计算器跳过来时会带上用户刚选中的线路，这里记下来，
+    // loadLines 拿到数据后用它做默认选中。
+    this.presetLineId = query.line_id ? Number(query.line_id) : null;
+  },
+
   onShow() {
     if (!getApp().ensureLogin()) return;
     this.loadPackages();
@@ -40,8 +46,9 @@ Page({
     call('System.Order.getLine', {}).then((lines) => {
       this.setData({ lines });
       if (lines.length) {
+        const preset = lines.find((l) => l.id === this.presetLineId) || lines[0];
         this.setData({
-          lineId: lines[0].id, selectedLineName: lines[0].name, selectedLine: lines[0],
+          lineId: preset.id, selectedLineName: preset.name, selectedLine: preset,
         }, () => this.recalc());
       }
     });

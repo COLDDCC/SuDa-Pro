@@ -251,7 +251,12 @@ order_items_table = "order_items"
 class Order(Base):
     __tablename__ = "orders"
 
-    STATUS_PENDING = "pending"       # 待发货
+    # 状态流转：下单 -> 待付款 -> 已付款待打包 -> 运输中 -> 已签收
+    #
+    # 「已付款」这一步不能省：运费是线下收的，没有它仓库就会在钱还没到账的时候
+    # 把货发出去，之后只能追着客户要钱。所以 markShipped 只接受已付款的订单。
+    STATUS_PENDING = "pending"       # 待付款（下单后的初始状态）
+    STATUS_PAID = "paid"             # 已付款，等仓库打包
     STATUS_SHIPPED = "shipped"       # 运输中
     STATUS_SIGNED = "signed"         # 已签收
     STATUS_CLOSED = "closed"         # 已关闭
@@ -273,6 +278,8 @@ class Order(Base):
     total_fee = Column(Numeric(10, 2), default=0)
 
     created_at = Column(DateTime, default=now)
+    paid_at = Column(DateTime, nullable=True)
+    payment_note = Column(String(128), default="")   # 收款方式/流水号，对账用
     shipped_at = Column(DateTime, nullable=True)
 
     member = relationship("Member", back_populates="orders")

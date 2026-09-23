@@ -46,9 +46,11 @@ def test_mark_inbound_only_from_pending(api, make_package):
     api.fail("System.Order.markInbound", {"goods_id": pkg["id"], "staff_key": STAFF_KEY})
 
 
-def test_mark_shipped_requires_inter_order(api, token, address_id, line_id, make_package):
+def test_mark_shipped_requires_inter_order(api, token, address_id, line_id,
+                                           make_package, confirm_payment):
     pkg = make_package(inbound=True)
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
+    confirm_payment(order["order_id"])
     api.fail("System.Order.markShipped", {"order_id": order["order_id"], "staff_key": STAFF_KEY})

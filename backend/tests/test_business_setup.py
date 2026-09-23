@@ -87,11 +87,12 @@ def test_customer_service_returns_what_is_filled_in(api, monkeypatch):
 # ---- 订单签收 ----
 
 @pytest.fixture
-def shipped_order(api, token, address_id, line_id, make_package):
+def shipped_order(api, token, address_id, line_id, make_package, confirm_payment):
     pkg = make_package(inbound=True, actual_weight="2")
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
+    confirm_payment(order["order_id"])
     api.ok("System.Order.markShipped", {
         "order_id": order["order_id"], "inter_order": "SIGN-TEST", "staff_key": STAFF_KEY,
     })

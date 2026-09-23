@@ -182,3 +182,12 @@ def photographed_package(api, make_package, upload):
             "goods_id": pkg["id"], "url": url, "kind": "inbound", "staff_key": STAFF_KEY,
         })
     return _make
+
+
+@pytest.fixture
+def confirm_payment(api):
+    """客服确认收到运费。仓库发货前必经的一步——运费线下收，没收到钱不能发货。"""
+    def _pay(order_id, **kw):
+        return api.ok("System.Order.markPaid",
+                      {"order_id": order_id, "staff_key": STAFF_KEY, **kw})
+    return _pay

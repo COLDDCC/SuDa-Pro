@@ -50,6 +50,8 @@ PUBLIC_METHODS = {
     "System.Order.staffUnclaimed",
     "System.Order.deleteUnclaimed",
     "System.Order.markSigned",
+    "System.Order.markPaid",
+    "System.Order.revertPaid",
 }
 
 

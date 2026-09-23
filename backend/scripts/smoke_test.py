@@ -57,6 +57,18 @@ _PNG = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
         b'\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82')
 
 
+def _raw(method, params=None, token=None):
+    """不检查 code 的原始调用，用来验证"这一步本该失败"。"""
+    body = {"method": method, "params": params or {}}
+    if token:
+        body["token"] = token
+    req = urllib.request.Request(
+        f"{BASE_URL}/api", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())
+
+
 def upload_test_image():
     """图片是 multipart，不走 /api 那套 JSON，单独打 /upload。"""
     boundary = "----smoketestboundary"
@@ -162,19 +174,30 @@ def main():
         f"计费重量应为仓库称重之和 {expected_weight}，实际 {preview['total_weight']}")
     print(f"  计费重量按仓库称重之和 {expected_weight}kg ✔")
 
-    step("9. [仓库] 标记订单已发货")
+    step("9. [客服] 确认收到运费（运费线下收，这是发货的前置条件）")
+    resp = _raw("System.Order.markShipped", {
+        "order_id": order["order_id"], "inter_order": "SHOULD-FAIL", "staff_key": STAFF_KEY,
+    })
+    assert resp["code"] != 0, "没收款却能发货"
+    print(f"  未收款时发货被拒：{resp['msg']}")
+    call("System.Order.markPaid", {
+        "order_id": order["order_id"], "payment_note": "微信转账 尾号1234", "staff_key": STAFF_KEY,
+    })
+    print("  已确认收款，仓库可以打包了")
+
+    step("10. [仓库] 标记订单已发货")
     call("System.Order.markShipped", {
         "order_id": order["order_id"], "inter_order": "SMOKE-INTER-0001", "staff_key": STAFF_KEY,
     })
     print("  已发货，国际转运单号 SMOKE-INTER-0001")
 
-    step("10. [仓库] 追加一条物流轨迹")
+    step("11. [仓库] 追加一条物流轨迹")
     call("System.Order.addTrack", {
         "order_id": order["order_id"], "status_text": "已到达上海分拣中心", "staff_key": STAFF_KEY,
     })
     print("  已追加")
 
-    step("11. 客户查订单详情，确认费用明细、照片、轨迹都在")
+    step("12. 客户查订单详情，确认费用明细、照片、轨迹都在")
     detail = call("System.Order.orderDetail", {"order_id": order["order_id"]}, token)
     assert detail["status"] == "shipped", f"订单状态应为 shipped，实际 {detail['status']}"
 

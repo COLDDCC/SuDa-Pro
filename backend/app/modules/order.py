@@ -354,7 +354,11 @@ def staffOrders(db, member, params):
         **_order_summary(o),
         "member_nickname": o.member.nickname,
         "member_mobile": o.member.mobile,
+        "member_code": o.member.cn_code,
         "address": _addr_dict(o.address),
+        # 收款时要看得到钱是怎么构成的，客户问起来能立刻答上
+        "fees": [{"name": f.name, "detail": f.detail, "amount": str(f.amount)}
+                 for f in sorted(o.fees, key=lambda x: x.id)],
         "packages": [_pkg_dict(i.package) for i in o.items],
     } for o in rows]
 
@@ -568,8 +572,9 @@ def _check_consignee_not_reused(db, member, address, exclude_order_id=None):
     if not business.ENFORCE_UNIQUE_CONSIGNEE:
         return
 
+    # 待付款和已付款都还没发出，都会挤在下一个航次里，所以两种都要算进来。
     q = db.query(models.Order).join(models.Address).filter(
-        models.Order.status == models.Order.STATUS_PENDING,
+        models.Order.status.in_([models.Order.STATUS_PENDING, models.Order.STATUS_PAID]),
     )
     if exclude_order_id:
         q = q.filter(models.Order.id != exclude_order_id)
@@ -764,6 +769,7 @@ def _order_summary(o: models.Order):
         "total_fee": str(o.total_fee),
         "line_name": o.line.name if o.line else "",
         "created_at": o.created_at.isoformat(),
+        "paid_at": o.paid_at.isoformat() if o.paid_at else None,
         "item_count": len(o.items),
     }
 
@@ -830,6 +836,8 @@ def orderClose(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
+    if o.status == models.Order.STATUS_PAID:
+        raise ApiError("这个订单已经付款了，需要退款，请联系客服处理")
     if o.status != models.Order.STATUS_PENDING:
         raise ApiError("订单已发货，无法关闭")
     o.status = models.Order.STATUS_CLOSED
@@ -858,6 +866,56 @@ def isuse(db, member, params):
     return {"usable": bool(l and l.is_active)}
 
 
+def markPaid(db, member, params):
+    """客服确认收到运费。订单从「待付款」进入「已付款，等打包」。
+
+    这一步是仓库发货的前置条件：运费线下收，没有这道闸，仓库会在钱还没到账时
+    就把货发出去，之后只能追着客户要钱。
+    """
+    _require_staff(params)
+    order_id = params.get("order_id") or params.get("id")
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    if o.status == models.Order.STATUS_PAID:
+        raise ApiError("这个订单已经确认过收款了")
+    if o.status != models.Order.STATUS_PENDING:
+        raise ApiError("只有待付款的订单可以确认收款")
+
+    o.status = models.Order.STATUS_PAID
+    o.paid_at = models.now()
+    o.payment_note = params.get("payment_note", "")
+    db.add(models.OrderTrack(
+        order_id=o.id, status_text="已收到运费，等待仓库打包", location="日本仓"))
+    db.commit()
+
+    feishu.notify(
+        "💰 已确认收款",
+        [("订单号", o.order_no), ("金额", f"¥{o.total_fee}"),
+         ("收款备注", o.payment_note or "无")],
+        color="green",
+        footer="仓库可以打包发货了",
+    )
+    return _order_summary(o)
+
+
+def revertPaid(db, member, params):
+    """收款点错了要能撤回——点错一次就等于白发一单货。"""
+    _require_staff(params)
+    order_id = params.get("order_id") or params.get("id")
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    if o.status != models.Order.STATUS_PAID:
+        raise ApiError("只有「已付款」的订单可以撤回收款")
+    o.status = models.Order.STATUS_PENDING
+    o.paid_at = None
+    o.payment_note = ""
+    db.add(models.OrderTrack(order_id=o.id, status_text="收款记录已撤回", location=""))
+    db.commit()
+    return _order_summary(o)
+
+
 def markShipped(db, member, params):
     """仓库人员标记订单已发货：填写国际转运单号，包裹状态流转为已发货，
     并自动追加一条物流轨迹。不挂会员 token，用 staff_key 校验。"""
@@ -870,7 +928,9 @@ def markShipped(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id).first()
     if not o:
         raise ApiError("订单不存在")
-    if o.status != models.Order.STATUS_PENDING:
+    if o.status == models.Order.STATUS_PENDING:
+        raise ApiError("这个订单还没确认收款，先在「待收款」里确认收到运费再发货")
+    if o.status != models.Order.STATUS_PAID:
         raise ApiError("订单当前状态不允许标记发货")
 
     o.status = models.Order.STATUS_SHIPPED

@@ -27,7 +27,7 @@ def test_exports_the_order_with_its_fee_breakdown(api, token, address_id, line_i
 
     row = rows[order["order_no"]]
     assert row["总金额"] == order["total_fee"]
-    assert row["状态"] == "待发货"
+    assert row["状态"] == "待付款"
     assert row["运费"], "运费这一列是空的，对不了账"
     assert row["拍照费"], "拍照费这一列是空的"
     assert row["收件人"] and row["身份证号"], "报关要核的实名信息没导出来"
@@ -38,11 +38,12 @@ def test_starts_with_a_bom_so_excel_shows_chinese(api):
     assert _download(api).content.startswith(b"\xef\xbb\xbf")
 
 
-def test_can_filter_by_status(api, token, address_id, line_id, make_package):
+def test_can_filter_by_status(api, token, address_id, line_id, make_package, confirm_payment):
     pkg = make_package(inbound=True)
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
+    confirm_payment(order["order_id"])
     api.ok("System.Order.markShipped", {
         "order_id": order["order_id"], "inter_order": "EXP-1", "staff_key": STAFF_KEY,
     })

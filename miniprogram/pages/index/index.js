@@ -60,6 +60,14 @@ Page({
       .catch(() => {});
   },
 
+  // 算完价直接进下单页，线路已经选好——用户刚比较完价格，正是最想下单的时候，
+  // 让他再去菜单里找一遍下单入口、再把线路重选一次，就是在劝退。
+  goOrderWithLine(e) {
+    wx.navigateTo({
+      url: `/pages/order-create/order-create?line_id=${e.currentTarget.dataset.lineId}`,
+    });
+  },
+
   goForecast() {
     wx.navigateTo({ url: '/pages/forecast/forecast' });
   },

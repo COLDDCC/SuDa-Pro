@@ -33,6 +33,8 @@
       </view>
       <view class="muted">{{item.fee_detail}}</view>
       <view class="muted">{{item.value_range}} · {{item.days_min}}-{{item.days_max}}天</view>
+      <button size="mini" class="btn-outline" style="margin-top: 12rpx;"
+        data-line-id="{{item.line_id}}" bindtap="goOrderWithLine">用这条线下单</button>
     </view>
     <view class="hint" wx:if="{{feeResult.length}}" style="margin: 16rpx 0 0;">
       两条线哪个便宜要看具体重量——精致小每 0.5kg 跳一档，无忧草每 0.1kg 跳一档，

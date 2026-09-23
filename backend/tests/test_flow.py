@@ -6,7 +6,7 @@ CI 里能直接跑。
 from .conftest import STAFF_KEY
 
 
-def test_full_shipping_flow(api, token, address_id, line_id, make_package):
+def test_full_shipping_flow(api, token, address_id, line_id, make_package, confirm_payment):
     pkg = make_package(netwt="2.5", inbound=True)
 
     # 包裹进了"已入库"，客户在"我的包裹"里能按状态筛出来
@@ -26,6 +26,9 @@ def test_full_shipping_flow(api, token, address_id, line_id, make_package):
     # 下单后包裹转为"待发货"，不能再被删
     assert api.ok("System.Order.getgoods", {"goods_id": pkg["id"]}, token)["status"] == "ordered"
     api.fail("System.Order.delectGood", {"goods_id": pkg["id"]}, token)
+
+    # 客服确认收到运费——运费线下收，这是仓库发货的前置条件
+    confirm_payment(order["order_id"], payment_note="微信转账")
 
     # 仓库标记发货
     api.ok("System.Order.markShipped", {
@@ -48,6 +51,7 @@ def test_full_shipping_flow(api, token, address_id, line_id, make_package):
     assert detail["inter_order"] == "TEST-INTER-0001"
     texts = [t["status_text"] for t in detail["tracks"]]
     assert "订单已创建，等待安排发货" in texts
+    assert any("收到运费" in t for t in texts), "收款这一步要留在轨迹里，客户能看到"
     assert "已到达上海分拣中心" in texts
     # 轨迹按时间正序，客户端直接渲染不用再排
     times = [t["time"] for t in detail["tracks"]]
@@ -55,7 +59,8 @@ def test_full_shipping_flow(api, token, address_id, line_id, make_package):
     assert [i["id"] for i in detail["packages"]] == [pkg["id"]]
 
     # 按国际转运单号也能查到轨迹
-    assert len(api.ok("System.Order.selectTrack", {"express_num": "TEST-INTER-0001"}, token)) == 3
+    assert api.ok("System.Order.selectTrack", {"express_num": "TEST-INTER-0001"}, token) \
+        == detail["tracks"]
 
 
 def test_order_total_matches_the_public_fee_calculator(api, token, address_id, line,
@@ -85,11 +90,13 @@ def test_close_order_returns_packages_to_inbound(api, token, address_id, line_id
     api.fail("System.Order.orderDetail", {"order_id": order["order_id"]}, token)
 
 
-def test_shipped_order_cannot_be_closed(api, token, address_id, line_id, make_package):
+def test_shipped_order_cannot_be_closed(api, token, address_id, line_id,
+                                        make_package, confirm_payment):
     pkg = make_package(inbound=True)
     order = api.ok("System.Order.savePage", {
         "address_id": address_id, "line_id": line_id, "package_ids": [pkg["id"]],
     }, token)
+    confirm_payment(order["order_id"])
     api.ok("System.Order.markShipped", {
         "order_id": order["order_id"], "inter_order": "X1", "staff_key": STAFF_KEY,
     })

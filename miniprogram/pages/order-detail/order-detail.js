@@ -39,6 +39,13 @@ Page({
     });
   },
 
+  onCopyOrderNo() {
+    wx.setClipboardData({
+      data: this.data.order.order_no,
+      success: () => wx.showToast({ title: '订单号已复制，发给客服即可', icon: 'none' }),
+    });
+  },
+
   onConfirmReceived() {
     wx.showModal({
       title: '确认已收到包裹？',

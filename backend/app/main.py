@@ -25,7 +25,8 @@ from .auth import get_current_member
 from . import models, seed
 
 STATUS_CN = {
-    "pending": "待发货", "shipped": "运输中", "signed": "已签收", "closed": "已关闭",
+    "pending": "待付款", "paid": "已付款待打包", "shipped": "运输中",
+    "signed": "已签收", "closed": "已关闭",
 }
 
 logger = logging.getLogger("suda")
@@ -125,7 +126,8 @@ def export_orders(staff_key: str = "", status: str = ""):
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow([
-            "订单号", "状态", "下单时间", "会员代码", "会员昵称", "会员手机",
+            "订单号", "状态", "下单时间", "收款时间", "收款备注",
+            "会员代码", "会员昵称", "会员手机",
             "线路", "计费重量kg", "件数", "总金额", "运费", "拍照费", "囤货费",
             "收件人", "收件电话", "身份证号", "收件地址", "国际转运单号", "发货时间", "备注",
         ])
@@ -135,6 +137,8 @@ def export_orders(staff_key: str = "", status: str = ""):
             w.writerow([
                 o.order_no, STATUS_CN.get(o.status, o.status),
                 o.created_at.strftime("%Y-%m-%d %H:%M"),
+                o.paid_at.strftime("%Y-%m-%d %H:%M") if o.paid_at else "",
+                o.payment_note,
                 o.member.cn_code if o.member else "",
                 o.member.nickname if o.member else "",
                 o.member.mobile if o.member else "",
