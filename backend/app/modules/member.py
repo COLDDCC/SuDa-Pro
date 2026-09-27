@@ -3,6 +3,7 @@ import re
 from decimal import Decimal
 
 from ..errors import ApiError
+from ..params import to_str, to_int, to_id, to_bool
 from .. import models, regions
 
 _MOBILE_RE = re.compile(r'^1\d{10}$')
@@ -30,8 +31,8 @@ def memberAccount(db, member, params):
 
 
 def saveNickName(db, member, params):
-    member.nickname = params.get("nickName", member.nickname)
-    avatar = params.get("userHeadimg")
+    member.nickname = to_str(params.get("nickName"), member.nickname, "昵称", max_len=64)
+    avatar = to_str(params.get("userHeadimg"), "", "头像")
     if avatar:
         member.avatar = avatar
     db.commit()
@@ -40,7 +41,7 @@ def saveNickName(db, member, params):
 
 def modifyCN(db, member, params):
     """更新用户展示昵称，附带竞品的清关码字段位置"""
-    nickname = params.get("nickname")
+    nickname = to_str(params.get("nickname"), "", "昵称", max_len=64)
     if nickname:
         member.nickname = nickname
         db.commit()
@@ -48,7 +49,7 @@ def modifyCN(db, member, params):
 
 
 def getWarehouseList(db, member, params):
-    shop_id = params.get("shop_id", 1)
+    shop_id = to_int(params.get("shop_id"), 1, "shop_id")
     rows = db.query(models.Warehouse).filter_by(shop_id=shop_id, is_active=True).all()
     return [{
         "id": w.id,
@@ -84,17 +85,17 @@ def _addr_dict(a: models.Address):
 
 
 def _fill_region_names(a: models.Address):
-    if a.province_id:
-        a.province_name = regions.get_province_name(a.province_id)
-    if a.city_id:
-        a.city_name = regions.get_city_name(a.city_id)
-    if a.district_id:
-        a.district_name = regions.get_district_name(a.district_id)
+    # 每次都重新解析：id 被改成空时名字也要跟着清空，否则会留着旧名字通过校验
+    a.province_name = regions.get_province_name(a.province_id)
+    a.city_name = regions.get_city_name(a.city_id)
+    a.district_name = regions.get_district_name(a.district_id)
 
 
 def checkConsignerInfo(db, member, params):
     """校验实名信息完整性: 收件人/手机号/身份证号/地址缺一不可（报关需要）"""
     info = params.get("addressInfo", params)
+    if not isinstance(info, dict):
+        raise ApiError("addressInfo格式不正确")
     missing = [f for f in ("consigner", "mobile", "idnumber", "address") if not info.get(f)]
     if missing:
         raise ApiError(f"实名信息不完整，缺少: {', '.join(missing)}")
@@ -105,7 +106,7 @@ def addAddress(db, member, params):
     a = models.Address(member_id=member.id)
     _apply_address_fields(a, params)
     _validate_address(a)
-    if params.get("is_default") or db.query(models.Address).filter_by(member_id=member.id).count() == 0:
+    if to_bool(params.get("is_default")) or db.query(models.Address).filter_by(member_id=member.id).count() == 0:
         _clear_default(db, member.id)
         a.is_default = True
     db.add(a)
@@ -115,13 +116,13 @@ def addAddress(db, member, params):
 
 
 def updateAddress(db, member, params):
-    addr_id = params.get("id")
+    addr_id = to_id(params.get("id"))
     a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
     if not a:
         raise ApiError("地址不存在")
     _apply_address_fields(a, params)
     _validate_address(a)
-    if params.get("is_default"):
+    if to_bool(params.get("is_default")):
         _clear_default(db, member.id)
         a.is_default = True
     db.commit()
@@ -129,12 +130,15 @@ def updateAddress(db, member, params):
 
 
 def _apply_address_fields(a: models.Address, params):
-    for field in ("consigner", "mobile", "address", "idnumber", "addressimg"):
+    for field, label, max_len in (
+        ("consigner", "收件人", 32), ("mobile", "手机号", 20), ("address", "详细地址", 255),
+        ("idnumber", "身份证号", 32), ("addressimg", "图片", 255),
+    ):
         if field in params:
-            setattr(a, field, params[field])
+            setattr(a, field, to_str(params[field], "", label, max_len=max_len).strip())
     for field in ("province_id", "city_id", "district_id"):
         if field in params:
-            setattr(a, field, params[field])
+            setattr(a, field, to_id(params[field], field))
     _fill_region_names(a)
 
 
@@ -161,7 +165,7 @@ def _clear_default(db, member_id):
 
 
 def addressDelete(db, member, params):
-    addr_id = params.get("id")
+    addr_id = to_id(params.get("id"))
     a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
     if not a:
         raise ApiError("地址不存在")
@@ -174,7 +178,7 @@ def addressDelete(db, member, params):
 
 
 def addressDetail(db, member, params):
-    addr_id = params.get("id")
+    addr_id = to_id(params.get("id"))
     a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
     if not a:
         raise ApiError("地址不存在")
@@ -182,7 +186,7 @@ def addressDetail(db, member, params):
 
 
 def memberAddressList(db, member, params):
-    keyword = params.get("keyword", "")
+    keyword = to_str(params.get("keyword"), "", "keyword")
     q = db.query(models.Address).filter_by(member_id=member.id)
     if keyword:
         q = q.filter(models.Address.consigner.contains(keyword) | models.Address.address.contains(keyword))
@@ -191,7 +195,7 @@ def memberAddressList(db, member, params):
 
 
 def modifyAddressDefault(db, member, params):
-    addr_id = params.get("id")
+    addr_id = to_id(params.get("id"))
     a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
     if not a:
         raise ApiError("地址不存在")

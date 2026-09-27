@@ -10,6 +10,7 @@ import httpx
 
 from ..config import WX_APPID, WX_SECRET
 from ..errors import ApiError
+from ..params import to_str
 from ..auth import create_token
 from .. import models
 
@@ -33,7 +34,9 @@ def _code2session(code: str):
 
 def wechatLogin(db, member, params):
     """params: {code, nickname?, avatar?}"""
-    code = params.get("code")
+    code = to_str(params.get("code"), "", "code", max_len=128)
+    nickname = to_str(params.get("nickname"), "", "昵称", max_len=64)
+    avatar = to_str(params.get("avatar"), "", "头像")
     if not code:
         raise ApiError("缺少 code")
 
@@ -44,8 +47,8 @@ def wechatLogin(db, member, params):
         m = models.Member(
             openid=openid,
             unionid=unionid,
-            nickname=params.get("nickname", ""),
-            avatar=params.get("avatar", ""),
+            nickname=nickname,
+            avatar=avatar,
             cn_code=uuid.uuid4().hex[:8].upper(),
         )
         db.add(m)
@@ -53,11 +56,11 @@ def wechatLogin(db, member, params):
         db.refresh(m)
     else:
         changed = False
-        if params.get("nickname") and m.nickname != params["nickname"]:
-            m.nickname = params["nickname"]
+        if nickname and m.nickname != nickname:
+            m.nickname = nickname
             changed = True
-        if params.get("avatar") and m.avatar != params["avatar"]:
-            m.avatar = params["avatar"]
+        if avatar and m.avatar != avatar:
+            m.avatar = avatar
             changed = True
         if changed:
             db.commit()
@@ -74,13 +77,13 @@ def devLogin(db, member, params):
     """
     if WX_APPID and WX_SECRET:
         raise ApiError("当前环境已配置微信登录，devLogin 已禁用", code=403)
-    identifier = params.get("identifier") or "dev-user"
+    identifier = to_str(params.get("identifier"), "", "identifier", max_len=48) or "dev-user"
     fake_openid = f"dev_{identifier}"
     m = db.query(models.Member).filter_by(openid=fake_openid).first()
     if m is None:
         m = models.Member(
             openid=fake_openid,
-            nickname=params.get("nickname", identifier),
+            nickname=to_str(params.get("nickname"), identifier, "昵称", max_len=64),
             cn_code=uuid.uuid4().hex[:8].upper(),
         )
         db.add(m)
@@ -92,7 +95,7 @@ def devLogin(db, member, params):
 
 def checkMobile(db, member, params):
     """写入/校验手机号。params: {mobile}"""
-    mobile = params.get("mobile", "")
+    mobile = to_str(params.get("mobile"), "", "手机号")
     if len(mobile) != 11 or not mobile.isdigit():
         raise ApiError("手机号格式不正确")
     member.mobile = mobile

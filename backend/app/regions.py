@@ -30,7 +30,7 @@ def _safe_int(value):
     直接抛 ValueError 炸到 500。"""
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: JSON 里的 Infinity
         return None
 
 

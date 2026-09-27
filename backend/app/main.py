@@ -55,9 +55,13 @@ async def api_entry(request: Request, db: Session = Depends(get_db)):
     # 之前这里裸调 body.get("method", "") 就被这种输入直接崩过。
     method = body.get("method") or ""
     params = body.get("params") or {}
+    if not isinstance(method, str):
+        return {"code": 400, "msg": "method 必须是字符串", "data": None}
     if not isinstance(params, dict):
         return {"code": 400, "msg": "params 必须是一个对象", "data": None}
     token = body.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not isinstance(token, str):
+        token = ""
 
     try:
         func, requires_auth = resolve(method)

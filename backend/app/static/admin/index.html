@@ -222,8 +222,8 @@ async function loadPackages() {
         <td>${escapeHtml(p.good_name)}</td>
         <td>${escapeHtml(p.count)}</td>
         <td>${escapeHtml(p.netwt)}</td>
-        <td>${STATUS_TEXT[p.status] || p.status}</td>
-        <td>${p.status === 'pending' ? `<button onclick="markInbound(${p.id})">标记入库</button>` : '<span class="muted">已入库，等待客户下单</span>'}</td>
+        <td>${p.status === 'ordered' ? '已下单，待入库' : escapeHtml(STATUS_TEXT[p.status] || p.status)}</td>
+        <td>${!p.inbound_at ? `<button onclick="markInbound(${p.id})">标记入库</button>` : '<span class="muted">已入库，等待客户下单</span>'}</td>
       </tr>
     `).join('');
   } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }

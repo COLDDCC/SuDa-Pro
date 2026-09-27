@@ -4,6 +4,7 @@ from decimal import Decimal, ROUND_UP
 
 from ..config import STAFF_KEY
 from ..errors import ApiError
+from ..params import to_str, to_int, to_id, to_decimal, to_bool
 from .. import models
 from .. import tracking
 
@@ -12,26 +13,9 @@ def _require_staff(params):
     """仓库/客服操作的权限校验。MVP 阶段没有员工账号体系，先用共享密钥顶上，
     比"任何登录用户都能操作别人的包裹/订单"要安全。用 compare_digest 避免时序攻击。"""
     key = params.get("staff_key") or ""
-    if not STAFF_KEY or not hmac.compare_digest(key, STAFF_KEY):
+    # compare_digest 要求两边都是 str，传个数字进来会直接 TypeError
+    if not STAFF_KEY or not isinstance(key, str) or not hmac.compare_digest(key.encode(), STAFF_KEY.encode()):
         raise ApiError("无权限执行该操作", code=403)
-
-
-def _to_int(value, default, field_name):
-    if value in (None, ""):
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        raise ApiError(f"{field_name}格式不正确")
-
-
-def _to_decimal(value, default, field_name):
-    if value in (None, ""):
-        return Decimal(default)
-    try:
-        return Decimal(str(value))
-    except Exception:
-        raise ApiError(f"{field_name}格式不正确")
 
 
 # ---- 预报 / 包裹(竞品叫"商品" goods，其实就是包裹里的物品) ----
@@ -70,7 +54,7 @@ def parseTrackingText(db, member, params):
     填单号框，用户确认/改一下就行，不用整串手打。不接第三方 OCR 服务，纯正则，
     所以没有额度限制、也不需要配任何 key。
     """
-    text = params.get("text", "")
+    text = to_str(params.get("text"), "", "文本", max_len=5000)
     candidates = tracking.guess_tracking_numbers(text)
     return {
         "best_guess": candidates[0] if candidates else None,
@@ -80,18 +64,19 @@ def parseTrackingText(db, member, params):
 
 def addforecast(db, member, params):
     """包裹预报 — 核心接口。用户告诉我们"有个包裹要来了"。"""
-    express_num = params.get("express_num") or params.get("way")
-    good_name = params.get("good_name")
+    express_num = to_str(params.get("express_num") or params.get("way"), "", "快递单号", max_len=64).strip()
+    good_name = to_str(params.get("good_name"), "", "品名", max_len=128).strip()
     if not express_num:
         raise ApiError("请填写快递单号")
     if not good_name:
         raise ApiError("请填写品名")
 
-    count = _to_int(params.get("count"), 1, "数量")
-    netwt = _to_decimal(params.get("netwt"), "0", "净重")
-    price = _to_decimal(params.get("price"), "0", "商品价值")
-    cc_registered_price = _to_decimal(params.get("cc_registered_price"), "0", "海关申报价值")
-    export_unit_price = _to_decimal(params.get("export_unit_price"), "0", "出口单价")
+    count = to_int(params.get("count"), 1, "数量", max_value=100000)
+    # 上限按对应 Numeric 列的容量取：netwt Numeric(10,3)、价格 Numeric(10,2)
+    netwt = to_decimal(params.get("netwt"), "0", "净重", max_value=Decimal("10000000"))
+    price = to_decimal(params.get("price"), "0", "商品价值", max_value=Decimal("100000000"))
+    cc_registered_price = to_decimal(params.get("cc_registered_price"), "0", "海关申报价值", max_value=Decimal("100000000"))
+    export_unit_price = to_decimal(params.get("export_unit_price"), "0", "出口单价", max_value=Decimal("100000000"))
 
     # 净重直接决定运费怎么算（savePage 里按选中包裹的净重总和计费）：一个负数
     # "包裹"就能把别的真实包裹的重量抵消掉，相当于免费搭车。数量/价值同理不能为负。
@@ -102,19 +87,19 @@ def addforecast(db, member, params):
 
     p = models.Package(
         member_id=member.id,
-        shop_id=params.get("shop_id", 1),
+        shop_id=to_int(params.get("shop_id"), 1, "shop_id"),
         express_num=express_num,
         good_name=good_name,
         count=count,
         netwt=netwt,
         price=price,
-        bar_code=params.get("bar_code", ""),
-        brand_name_cn=params.get("brand_name_cn", ""),
-        category=params.get("category", ""),
-        spec=params.get("spec", ""),
+        bar_code=to_str(params.get("bar_code"), "", "条码", max_len=64),
+        brand_name_cn=to_str(params.get("brand_name_cn"), "", "品牌", max_len=64),
+        category=to_str(params.get("category"), "", "类别", max_len=64),
+        spec=to_str(params.get("spec"), "", "规格", max_len=64),
         cc_registered_price=cc_registered_price,
         export_unit_price=export_unit_price,
-        is_second_goods=bool(params.get("is_second_goods", False)),
+        is_second_goods=to_bool(params.get("is_second_goods")),
         status=models.Package.STATUS_PENDING,
     )
     db.add(p)
@@ -126,7 +111,7 @@ def addforecast(db, member, params):
 def goodsList(db, member, params):
     """我的包裹列表，可按状态筛选: pending/inbound/ordered/shipped/cancelled"""
     q = db.query(models.Package).filter_by(member_id=member.id)
-    status = params.get("status")
+    status = to_str(params.get("status"), "", "status")
     if status:
         q = q.filter_by(status=status)
     rows = q.order_by(models.Package.id.desc()).all()
@@ -134,7 +119,7 @@ def goodsList(db, member, params):
 
 
 def getgoods(db, member, params):
-    goods_id = params.get("goods_id") or params.get("id")
+    goods_id = to_id(params.get("goods_id") or params.get("id"))
     p = db.query(models.Package).filter_by(id=goods_id, member_id=member.id).first()
     if not p:
         raise ApiError("包裹不存在")
@@ -142,7 +127,7 @@ def getgoods(db, member, params):
 
 
 def queryGoods(db, member, params):
-    bar_code = params.get("bar_code", "")
+    bar_code = to_str(params.get("bar_code"), "", "条码")
     q = db.query(models.Package).filter_by(member_id=member.id)
     if bar_code:
         q = q.filter_by(bar_code=bar_code)
@@ -150,7 +135,7 @@ def queryGoods(db, member, params):
 
 
 def selectgoods(db, member, params):
-    good_name = params.get("good_name", "")
+    good_name = to_str(params.get("good_name"), "", "品名")
     q = db.query(models.Package).filter_by(member_id=member.id)
     if good_name:
         q = q.filter(models.Package.good_name.contains(good_name))
@@ -158,7 +143,7 @@ def selectgoods(db, member, params):
 
 
 def delectGood(db, member, params):
-    goods_id = params.get("goods_id") or params.get("id")
+    goods_id = to_id(params.get("goods_id") or params.get("id"))
     p = db.query(models.Package).filter_by(id=goods_id, member_id=member.id).first()
     if not p:
         raise ApiError("包裹不存在")
@@ -170,25 +155,32 @@ def delectGood(db, member, params):
 
 
 def markInbound(db, member, params):
-    """仓库人员标记包裹已入库。不挂会员 token，用 staff_key 校验（见 _require_staff）。"""
+    """仓库人员标记包裹已入库。不挂会员 token，用 staff_key 校验（见 _require_staff）。
+
+    客户可以在包裹到仓之前就下单（savePage 允许 pending 包裹），这时包裹状态已经
+    是 ordered，但实物还没到——所以"有没有入库"看 inbound_at，而不是只看 status。
+    """
     _require_staff(params)
-    goods_id = params.get("goods_id") or params.get("id")
+    goods_id = to_id(params.get("goods_id") or params.get("id"))
     p = db.query(models.Package).filter_by(id=goods_id).first()
     if not p:
         raise ApiError("包裹不存在")
-    if p.status != models.Package.STATUS_PENDING:
+    if p.inbound_at is not None or p.status not in (models.Package.STATUS_PENDING, models.Package.STATUS_ORDERED):
         raise ApiError("包裹当前状态不是待入库")
-    p.status = models.Package.STATUS_INBOUND
+    if p.status == models.Package.STATUS_PENDING:
+        p.status = models.Package.STATUS_INBOUND
     p.inbound_at = models.now()
     db.commit()
     return _pkg_dict(p)
 
 
 def staffPendingPackages(db, member, params):
-    """给后台管理页用：查所有会员的待入库/已入库包裹（客户端的 goodsList 只能看自己的）。"""
+    """给后台管理页用：查所有会员的待入库/已入库包裹（客户端的 goodsList 只能看自己的）。
+    还没到仓就已经被下单的包裹（ordered 且 inbound_at 为空）也要列出来，不然仓库没法给它入库。"""
     _require_staff(params)
     rows = db.query(models.Package).filter(
         models.Package.status.in_([models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND])
+        | ((models.Package.status == models.Package.STATUS_ORDERED) & models.Package.inbound_at.is_(None))
     ).order_by(models.Package.id.desc()).all()
     return [{
         **_pkg_dict(p),
@@ -201,7 +193,7 @@ def staffPendingPackages(db, member, params):
 def staffOrders(db, member, params):
     """给后台管理页用：按状态查所有会员的订单（客户端的 order 只能看自己的）。"""
     _require_staff(params)
-    status = params.get("status", "pending")
+    status = to_str(params.get("status"), "pending", "status")
     rows = db.query(models.Order).filter_by(status=status).order_by(models.Order.id.desc()).all()
     from .member import _addr_dict
     return [{
@@ -216,7 +208,7 @@ def staffOrders(db, member, params):
 # ---- 下单发货 ----
 
 def getLine(db, member, params):
-    shop_id = params.get("shop_id", 1)
+    shop_id = to_int(params.get("shop_id"), 1, "shop_id")
     rows = db.query(models.Line).filter_by(shop_id=shop_id, is_active=True).all()
     return [{
         "id": l.id, "name": l.name, "price_per_kg": str(l.price_per_kg),
@@ -226,8 +218,8 @@ def getLine(db, member, params):
 
 def savePage(db, member, params):
     """下单。params: {address_id, line_id, package_ids: [..], remark, shop_id}"""
-    address_id = params.get("address_id")
-    line_id = params.get("line_id") or params.get("co_id")
+    address_id = to_id(params.get("address_id"), "address_id")
+    line_id = to_id(params.get("line_id") or params.get("co_id"), "line_id")
     package_ids = params.get("package_ids") or params.get("goods_ids") or []
 
     if not address_id:
@@ -236,6 +228,10 @@ def savePage(db, member, params):
         raise ApiError("请选择物流线路")
     if not isinstance(package_ids, list) or not package_ids:
         raise ApiError("请至少选择一个包裹")
+    package_ids = [to_id(i, "package_ids") for i in package_ids]
+    if None in package_ids:
+        raise ApiError("package_ids格式不正确")
+    remark = to_str(params.get("remark"), "", "备注", max_len=500)
 
     address = db.query(models.Address).filter_by(id=address_id, member_id=member.id).first()
     if not address:
@@ -265,8 +261,8 @@ def savePage(db, member, params):
         member_id=member.id,
         address_id=address_id,
         line_id=line_id,
-        shop_id=params.get("shop_id", 1),
-        remark=params.get("remark", ""),
+        shop_id=to_int(params.get("shop_id"), 1, "shop_id"),
+        remark=remark,
         status=models.Order.STATUS_PENDING,
         total_weight=total_weight,
         total_fee=total_fee,
@@ -301,21 +297,21 @@ def _order_summary(o: models.Order):
 def order(db, member, params):
     """订单列表"""
     q = db.query(models.Order).filter_by(member_id=member.id)
-    status = params.get("status")
+    status = to_str(params.get("status"), "", "status")
     if status:
         q = q.filter_by(status=status)
-    keyword = params.get("keyword")
+    keyword = to_str(params.get("keyword"), "", "keyword")
     if keyword:
         q = q.filter(models.Order.order_no.contains(keyword))
-    page = max(_to_int(params.get("page"), 1, "page"), 1)
-    page_size = min(max(_to_int(params.get("page_size"), 10, "page_size"), 1), 100)
+    page = min(max(to_int(params.get("page"), 1, "page"), 1), 100000)
+    page_size = min(max(to_int(params.get("page_size"), 10, "page_size"), 1), 100)
     total = q.count()
     rows = q.order_by(models.Order.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "page": page, "list": [_order_summary(o) for o in rows]}
 
 
 def orderDetail(db, member, params):
-    order_id = params.get("order_id") or params.get("id")
+    order_id = to_id(params.get("order_id") or params.get("id"))
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
@@ -331,7 +327,7 @@ def orderDetail(db, member, params):
 
 
 def getAddressDetail(db, member, params):
-    order_id = params.get("id") or params.get("order_id")
+    order_id = to_id(params.get("id") or params.get("order_id"))
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
@@ -341,7 +337,10 @@ def getAddressDetail(db, member, params):
 
 def selectTrack(db, member, params):
     """物流轨迹。按快递单号(其实是国际转运单号 inter_order)查询"""
-    express_num = params.get("express_num")
+    express_num = to_str(params.get("express_num"), "", "单号").strip()
+    if not express_num:
+        # 待发货订单的 inter_order 是空串，空单号会查到它们
+        raise ApiError("请填写单号")
     o = db.query(models.Order).filter_by(inter_order=express_num, member_id=member.id).first()
     if not o:
         raise ApiError("未查询到物流信息")
@@ -351,7 +350,7 @@ def selectTrack(db, member, params):
 
 
 def orderClose(db, member, params):
-    order_id = params.get("order_id") or params.get("id")
+    order_id = to_id(params.get("order_id") or params.get("id"))
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
@@ -359,13 +358,15 @@ def orderClose(db, member, params):
         raise ApiError("订单已发货，无法关闭")
     o.status = models.Order.STATUS_CLOSED
     for item in o.items:
-        item.package.status = models.Package.STATUS_INBOUND
+        # 下单时包裹可能还没到仓（pending），关单要退回原状态，不能一律标成已入库
+        p = item.package
+        p.status = models.Package.STATUS_INBOUND if p.inbound_at else models.Package.STATUS_PENDING
     db.commit()
     return {"ok": True}
 
 
 def deleteOrder(db, member, params):
-    order_id = params.get("order_id") or params.get("id")
+    order_id = to_id(params.get("order_id") or params.get("id"))
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
@@ -378,7 +379,7 @@ def deleteOrder(db, member, params):
 
 def isuse(db, member, params):
     """竞品字段留位：校验某条线路/地址当前是否可用"""
-    line_id = params.get("id")
+    line_id = to_id(params.get("id"))
     l = db.query(models.Line).filter_by(id=line_id).first()
     return {"usable": bool(l and l.is_active)}
 
@@ -387,16 +388,20 @@ def markShipped(db, member, params):
     """仓库人员标记订单已发货：填写国际转运单号，包裹状态流转为已发货，
     并自动追加一条物流轨迹。不挂会员 token，用 staff_key 校验。"""
     _require_staff(params)
-    order_id = params.get("order_id") or params.get("id")
-    inter_order = params.get("inter_order")
+    order_id = to_id(params.get("order_id") or params.get("id"))
+    inter_order = to_str(params.get("inter_order"), "", "国际转运单号", max_len=64).strip()
     if not inter_order:
         raise ApiError("请填写国际转运单号")
+    location = to_str(params.get("location"), "日本仓", "地点", max_len=128)
 
     o = db.query(models.Order).filter_by(id=order_id).first()
     if not o:
         raise ApiError("订单不存在")
     if o.status != models.Order.STATUS_PENDING:
         raise ApiError("订单当前状态不允许标记发货")
+    not_arrived = [i.package.good_name for i in o.items if i.package.inbound_at is None]
+    if not_arrived:
+        raise ApiError(f"以下包裹还未入库，不能发货: {', '.join(not_arrived)}")
 
     o.status = models.Order.STATUS_SHIPPED
     o.inter_order = inter_order
@@ -406,7 +411,7 @@ def markShipped(db, member, params):
     db.add(models.OrderTrack(
         order_id=o.id,
         status_text=f"已发出，国际转运单号 {inter_order}",
-        location=params.get("location", "日本仓"),
+        location=location,
     ))
     db.commit()
     return _order_summary(o)
@@ -415,14 +420,15 @@ def markShipped(db, member, params):
 def addTrack(db, member, params):
     """客服/仓库为订单追加一条物流轨迹节点。不挂会员 token，用 staff_key 校验。"""
     _require_staff(params)
-    order_id = params.get("order_id") or params.get("id")
-    status_text = params.get("status_text")
+    order_id = to_id(params.get("order_id") or params.get("id"))
+    status_text = to_str(params.get("status_text"), "", "轨迹内容").strip()
     if not status_text:
         raise ApiError("请填写轨迹内容")
+    location = to_str(params.get("location"), "", "地点", max_len=128)
 
     o = db.query(models.Order).filter_by(id=order_id).first()
     if not o:
         raise ApiError("订单不存在")
-    db.add(models.OrderTrack(order_id=o.id, status_text=status_text, location=params.get("location", "")))
+    db.add(models.OrderTrack(order_id=o.id, status_text=status_text, location=location))
     db.commit()
     return {"ok": True}

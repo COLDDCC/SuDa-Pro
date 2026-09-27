@@ -26,7 +26,7 @@ Page({
   onCloseOrder() {
     wx.showModal({
       title: '确认关闭订单',
-      content: '关闭后包裹会回到"已入库"状态，可以重新下单',
+      content: '关闭后包裹会回到下单前的状态，可以重新下单',
       success: (res) => {
         if (!res.confirm) return;
         call('System.Order.orderClose', { order_id: this.orderId }).then(() => this.loadDetail());

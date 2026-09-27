@@ -2,6 +2,7 @@
 from decimal import Decimal, ROUND_UP
 
 from ..errors import ApiError
+from ..params import to_int, to_id, to_decimal
 from .. import models, regions
 
 
@@ -36,13 +37,13 @@ def _line_dict(l: models.Line):
 
 
 def lineList(db, member, params):
-    shop_id = params.get("shop_id", 1)
+    shop_id = to_int(params.get("shop_id"), 1, "shop_id")
     rows = db.query(models.Line).filter_by(shop_id=shop_id, is_active=True).all()
     return [_line_dict(l) for l in rows]
 
 
 def lineInfo(db, member, params):
-    line_id = params.get("line_id")
+    line_id = to_id(params.get("line_id"), "line_id")
     l = db.query(models.Line).filter_by(id=line_id).first()
     if not l:
         raise ApiError("线路不存在")
@@ -52,12 +53,12 @@ def lineInfo(db, member, params):
 def estimateFee(db, member, params):
     """差异化功能：运费计算器。按重量(kg)算出各条线路的预估费用，首页直接展示。
     params: {weight}
+
+    weight 允许为 0：下单页选中的包裹净重可能都没填（0），实际下单时按线路最低
+    计费重量收费，这里要给出同样的金额，而不是让前端显示 ¥0。
     """
-    try:
-        weight = Decimal(str(params.get("weight", 0)))
-    except Exception:
-        raise ApiError("重量格式不正确")
-    if weight <= 0:
+    weight = to_decimal(params.get("weight"), "0", "重量")
+    if weight < 0:
         raise ApiError("请输入有效的重量")
 
     lines = db.query(models.Line).filter_by(is_active=True).all()
@@ -82,13 +83,13 @@ def _notice_dict(n: models.Notice):
 
 
 def noticeList(db, member, params):
-    shop_id = params.get("shop_id", 1)
+    shop_id = to_int(params.get("shop_id"), 1, "shop_id")
     rows = db.query(models.Notice).filter_by(shop_id=shop_id).order_by(models.Notice.id.desc()).all()
     return [_notice_dict(n) for n in rows]
 
 
 def noticeInfo(db, member, params):
-    notice_id = params.get("notice_id")
+    notice_id = to_id(params.get("notice_id"), "notice_id")
     n = db.query(models.Notice).filter_by(id=notice_id).first()
     if not n:
         raise ApiError("公告不存在")
