@@ -36,6 +36,7 @@ PUBLIC_METHODS = {
     "System.Order.markInbound",
     "System.Order.markShipped",
     "System.Order.addTrack",
+    "System.Order.markSigned",
     "System.Order.staffPendingPackages",
     "System.Order.staffOrders",
 }

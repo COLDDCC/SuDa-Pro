@@ -4,6 +4,7 @@ import os
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from .database import Base, engine, get_db
@@ -68,11 +69,15 @@ async def api_entry(request: Request, db: Session = Depends(get_db)):
     except MethodNotFound:
         return {"code": 404, "msg": f"未知接口: {method}", "data": None}
 
-    member = None
+    def dispatch():
+        member = get_current_member(db, token) if requires_auth else None
+        return func(db, member, params)
+
     try:
-        if requires_auth:
-            member = get_current_member(db, token)
-        data = func(db, member, params)
+        # 业务函数都是同步的（SQLAlchemy 同步 Session、微信登录的 httpx 同步请求），
+        # 直接在 async 路由里调用会卡住事件循环：一个请求在等微信接口（最长 10 秒），
+        # 整个服务的所有请求都得排队。放到线程池里跑。
+        data = await run_in_threadpool(dispatch)
         return {"code": 0, "msg": "ok", "data": data}
     except ApiError as e:
         db.rollback()

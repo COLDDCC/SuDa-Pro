@@ -20,15 +20,20 @@ WX_CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
 def _code2session(code: str):
     if not WX_APPID or not WX_SECRET:
         raise ApiError("服务端未配置微信 AppID/Secret，请使用 devLogin 联调", code=500)
-    resp = httpx.get(WX_CODE2SESSION_URL, params={
-        "appid": WX_APPID,
-        "secret": WX_SECRET,
-        "js_code": code,
-        "grant_type": "authorization_code",
-    }, timeout=10)
-    data = resp.json()
-    if "openid" not in data:
-        raise ApiError(f"微信登录失败: {data.get('errmsg', data)}", code=502)
+    try:
+        resp = httpx.get(WX_CODE2SESSION_URL, params={
+            "appid": WX_APPID,
+            "secret": WX_SECRET,
+            "js_code": code,
+            "grant_type": "authorization_code",
+        }, timeout=10)
+        data = resp.json()
+    except (httpx.HTTPError, ValueError):
+        # 超时/网络不通/微信返回了非 JSON（网关错误页）——之前这里直接 500
+        raise ApiError("微信服务暂时不可用，请稍后重试", code=502)
+    if not isinstance(data, dict) or "openid" not in data:
+        errmsg = data.get("errmsg") if isinstance(data, dict) else data
+        raise ApiError(f"微信登录失败: {errmsg}", code=502)
     return data["openid"], data.get("unionid")
 
 

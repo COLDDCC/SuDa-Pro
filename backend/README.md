@@ -22,7 +22,12 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8811
 ```bash
 export WX_APPID=你的小程序appid
 export WX_SECRET=你的小程序secret
+export JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 ```
+
+配了 `WX_APPID`/`WX_SECRET` 却没改 `JWT_SECRET` 时后端会**拒绝启动**：默认值写在
+仓库代码里，谁都能拿它伪造登录 token。注意 `JWT_SECRET` 要固定下来（写进部署配置），
+每次重启都换的话，所有用户的登录都会失效。
 
 没有配置时，`System.Login.wechatLogin` 会报错，此时用 `System.Login.devLogin`
 （传任意 `identifier`）跳过微信直接登录，方便本地联调。**一旦配置了

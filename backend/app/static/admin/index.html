@@ -282,6 +282,7 @@ async function loadShippedOrders() {
           <div class="row-flex">
             <input class="inline" id="track-${o.id}" placeholder="例：已到达上海分拣中心" style="width: 220px;" />
             <button onclick="addTrack(${o.id})">追加</button>
+            <button onclick="markSigned(${o.id})">标记签收</button>
           </div>
         </td>
       </tr>
@@ -296,6 +297,13 @@ async function addTrack(id) {
   await call('System.Order.addTrack', { order_id: id, status_text: text });
   toast('已追加轨迹');
   input.value = '';
+}
+
+async function markSigned(id) {
+  if (!confirm('确认该订单已签收？')) return;
+  await call('System.Order.markSigned', { order_id: id });
+  toast('已标记签收');
+  loadShippedOrders();
 }
 
 document.getElementById('staffKey').value = getKey();

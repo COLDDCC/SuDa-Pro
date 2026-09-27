@@ -2,6 +2,8 @@
 import hmac
 from decimal import Decimal, ROUND_UP
 
+from sqlalchemy import case
+
 from ..config import STAFF_KEY
 from ..errors import ApiError
 from ..params import to_str, to_int, to_id, to_decimal, to_bool
@@ -46,6 +48,25 @@ def _pkg_dict(p: models.Package):
         "created_at": p.created_at.isoformat(),
         "inbound_at": p.inbound_at.isoformat() if p.inbound_at else None,
     }
+
+
+def _set_status(db, model, ids, from_statuses, values, *extra_filters):
+    """原子地做状态流转：UPDATE ... WHERE id IN ids AND status IN from_statuses，
+    返回实际改到的行数。
+
+    不能"先查出来判断状态、再在 Python 里改"：两个请求并发时（双击提交、客户关单
+    和仓库发货同时发生）都会查到旧状态、都判断通过，结果同一批包裹进了两个订单，
+    或者一个订单既被关闭又被发货。把判断放进 UPDATE 的 WHERE 里，数据库保证只有
+    一个能改成功，调用方按返回的行数判断自己是不是赢的那个。
+    """
+    return db.query(model).filter(
+        model.id.in_(ids), model.status.in_(from_statuses), *extra_filters,
+    ).update(values, synchronize_session=False)
+
+
+def _order_packages(o: models.Order):
+    # 已关闭订单里的包裹允许被客户删除，老数据里可能留着指向已删包裹的 OrderItem
+    return [i.package for i in o.items if i.package is not None]
 
 
 def parseTrackingText(db, member, params):
@@ -149,7 +170,15 @@ def delectGood(db, member, params):
         raise ApiError("包裹不存在")
     if p.status == models.Package.STATUS_ORDERED or p.status == models.Package.STATUS_SHIPPED:
         raise ApiError("包裹已在订单中，无法删除")
-    db.delete(p)
+    deleted = db.query(models.Package).filter(
+        models.Package.id == p.id,
+        models.Package.status.in_([models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND]),
+    ).delete(synchronize_session=False)
+    if not deleted:
+        raise ApiError("包裹已在订单中，无法删除")
+    # 包裹能删说明它只可能出现在已关闭的订单里；把这些订单里指向它的明细一并删掉，
+    # 不然订单详情渲染到这个包裹时会拿到 None。
+    db.query(models.OrderItem).filter_by(package_id=p.id).delete(synchronize_session=False)
     db.commit()
     return {"ok": True}
 
@@ -165,11 +194,21 @@ def markInbound(db, member, params):
     p = db.query(models.Package).filter_by(id=goods_id).first()
     if not p:
         raise ApiError("包裹不存在")
-    if p.inbound_at is not None or p.status not in (models.Package.STATUS_PENDING, models.Package.STATUS_ORDERED):
+    updated = _set_status(
+        db, models.Package, [p.id],
+        [models.Package.STATUS_PENDING, models.Package.STATUS_ORDERED],
+        {
+            # pending -> inbound；已经下单的包裹保持 ordered，只记录入库时间
+            "status": case(
+                (models.Package.status == models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND),
+                else_=models.Package.status,
+            ),
+            "inbound_at": models.now(),
+        },
+        models.Package.inbound_at.is_(None),
+    )
+    if not updated:
         raise ApiError("包裹当前状态不是待入库")
-    if p.status == models.Package.STATUS_PENDING:
-        p.status = models.Package.STATUS_INBOUND
-    p.inbound_at = models.now()
     db.commit()
     return _pkg_dict(p)
 
@@ -201,7 +240,7 @@ def staffOrders(db, member, params):
         "member_nickname": o.member.nickname,
         "member_mobile": o.member.mobile,
         "address": _addr_dict(o.address),
-        "packages": [_pkg_dict(i.package) for i in o.items],
+        "packages": [_pkg_dict(p) for p in _order_packages(o)],
     } for o in rows]
 
 
@@ -270,8 +309,16 @@ def savePage(db, member, params):
     db.add(order)
     db.flush()
 
+    claimed = _set_status(
+        db, models.Package, package_ids,
+        [models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND],
+        {"status": models.Package.STATUS_ORDERED},
+        models.Package.member_id == member.id,
+    )
+    if claimed != len(package_ids):
+        # 并发的另一个请求（比如重复点击提交）已经把其中的包裹下单或删除了
+        raise ApiError("包裹状态已变化，请刷新后重试")
     for p in packages:
-        p.status = models.Package.STATUS_ORDERED
         db.add(models.OrderItem(order_id=order.id, package_id=p.id))
 
     db.add(models.OrderTrack(order_id=order.id, status_text="订单已创建，等待安排发货", location="日本仓"))
@@ -290,7 +337,7 @@ def _order_summary(o: models.Order):
         "total_fee": str(o.total_fee),
         "line_name": o.line.name if o.line else "",
         "created_at": o.created_at.isoformat(),
-        "item_count": len(o.items),
+        "item_count": len(_order_packages(o)),
     }
 
 
@@ -319,7 +366,7 @@ def orderDetail(db, member, params):
     return {
         **_order_summary(o),
         "address": _addr_dict(o.address),
-        "packages": [_pkg_dict(i.package) for i in o.items],
+        "packages": [_pkg_dict(p) for p in _order_packages(o)],
         "tracks": [{
             "time": t.time.isoformat(), "status_text": t.status_text, "location": t.location,
         } for t in sorted(o.tracks, key=lambda t: t.time)],
@@ -354,13 +401,17 @@ def orderClose(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id, member_id=member.id).first()
     if not o:
         raise ApiError("订单不存在")
-    if o.status != models.Order.STATUS_PENDING:
+    if not _set_status(db, models.Order, [o.id], [models.Order.STATUS_PENDING],
+                       {"status": models.Order.STATUS_CLOSED}):
         raise ApiError("订单已发货，无法关闭")
-    o.status = models.Order.STATUS_CLOSED
-    for item in o.items:
-        # 下单时包裹可能还没到仓（pending），关单要退回原状态，不能一律标成已入库
-        p = item.package
-        p.status = models.Package.STATUS_INBOUND if p.inbound_at else models.Package.STATUS_PENDING
+    # 下单时包裹可能还没到仓（pending），关单要退回原状态，不能一律标成已入库。
+    # 按数据库里当前的 inbound_at 判断（仓库可能刚刚给它入了库）。
+    pkg_ids = [i.package_id for i in o.items]
+    ordered = [models.Package.STATUS_ORDERED]
+    _set_status(db, models.Package, pkg_ids, ordered, {"status": models.Package.STATUS_INBOUND},
+                models.Package.inbound_at.isnot(None))
+    _set_status(db, models.Package, pkg_ids, ordered, {"status": models.Package.STATUS_PENDING},
+                models.Package.inbound_at.is_(None))
     db.commit()
     return {"ok": True}
 
@@ -397,22 +448,40 @@ def markShipped(db, member, params):
     o = db.query(models.Order).filter_by(id=order_id).first()
     if not o:
         raise ApiError("订单不存在")
-    if o.status != models.Order.STATUS_PENDING:
+    if not _set_status(db, models.Order, [o.id], [models.Order.STATUS_PENDING], {
+        "status": models.Order.STATUS_SHIPPED, "inter_order": inter_order, "shipped_at": models.now(),
+    }):
         raise ApiError("订单当前状态不允许标记发货")
-    not_arrived = [i.package.good_name for i in o.items if i.package.inbound_at is None]
+    # 抢到订单之后再查一次数据库里的入库状态，不用之前加载的旧对象
+    pkg_ids = [i.package_id for i in o.items]
+    not_arrived = [name for (name,) in db.query(models.Package.good_name).filter(
+        models.Package.id.in_(pkg_ids), models.Package.inbound_at.is_(None),
+    )]
     if not_arrived:
         raise ApiError(f"以下包裹还未入库，不能发货: {', '.join(not_arrived)}")
-
-    o.status = models.Order.STATUS_SHIPPED
-    o.inter_order = inter_order
-    o.shipped_at = models.now()
-    for item in o.items:
-        item.package.status = models.Package.STATUS_SHIPPED
+    _set_status(db, models.Package, pkg_ids, [models.Package.STATUS_ORDERED],
+                {"status": models.Package.STATUS_SHIPPED})
     db.add(models.OrderTrack(
         order_id=o.id,
         status_text=f"已发出，国际转运单号 {inter_order}",
         location=location,
     ))
+    db.commit()
+    return _order_summary(o)
+
+
+def markSigned(db, member, params):
+    """客服标记订单已签收（运输中 -> 已签收）。不挂会员 token，用 staff_key 校验。
+    之前没有任何接口会把订单改成 signed，小程序"已签收"那个 tab 永远是空的。"""
+    _require_staff(params)
+    order_id = to_id(params.get("order_id") or params.get("id"))
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    if not o:
+        raise ApiError("订单不存在")
+    if not _set_status(db, models.Order, [o.id], [models.Order.STATUS_SHIPPED],
+                       {"status": models.Order.STATUS_SIGNED}):
+        raise ApiError("只有运输中的订单可以标记签收")
+    db.add(models.OrderTrack(order_id=o.id, status_text="已签收", location=""))
     db.commit()
     return _order_summary(o)
 
