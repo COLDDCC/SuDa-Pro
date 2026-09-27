@@ -26,8 +26,11 @@ Page({
   },
 
   loadList(done) {
+    // 切 tab 时上一个 tab 的请求可能晚到，不能让它覆盖当前 tab 的列表
+    const seq = (this.loadSeq = (this.loadSeq || 0) + 1);
     call('System.Order.goodsList', this.data.activeTab ? { status: this.data.activeTab } : {})
       .then((list) => {
+        if (seq !== this.loadSeq) return;
         this.setData({
           list: list.map((p) => ({ ...p, statusInfo: packageStatus(p.status) })),
         });

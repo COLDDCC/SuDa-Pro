@@ -45,7 +45,7 @@ Page({
     if (!f.express_num) return wx.showToast({ title: '请填写快递单号', icon: 'none' });
     if (!f.good_name) return wx.showToast({ title: '请填写品名', icon: 'none' });
 
-    wx.showLoading({ title: '提交中...' });
+    wx.showLoading({ title: '提交中...', mask: true }); // 挡住连点，不然会预报出重复包裹
     call('System.Order.addforecast', {
       express_num: f.express_num,
       good_name: f.good_name,

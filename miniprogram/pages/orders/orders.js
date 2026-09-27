@@ -38,12 +38,15 @@ Page({
 
   loadList({ reset, done } = {}) {
     const page = reset ? 1 : this.data.page;
+    // 切 tab 时上一个 tab 的请求可能还没回来，它晚到的结果不能拼进/覆盖新 tab 的列表
+    const seq = (this.loadSeq = (this.loadSeq || 0) + 1);
     this.setData({ loadingMore: true });
     const params = { page, page_size: PAGE_SIZE };
     if (this.data.activeTab) params.status = this.data.activeTab;
 
     call('System.Order.order', params)
       .then((res) => {
+        if (seq !== this.loadSeq) return;
         const newRows = res.list.map((o) => ({ ...o, statusInfo: orderStatus(o.status) }));
         const list = reset ? newRows : this.data.list.concat(newRows);
         this.setData({
@@ -53,7 +56,7 @@ Page({
         });
       })
       .finally(() => {
-        this.setData({ loadingMore: false });
+        if (seq === this.loadSeq) this.setData({ loadingMore: false });
         done && done();
       });
   },

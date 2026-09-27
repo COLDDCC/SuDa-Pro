@@ -1,5 +1,5 @@
 const { call } = require('../../utils/request.js');
-const { orderStatus, packageStatus } = require('../../utils/format.js');
+const { orderStatus, packageStatus, formatTime } = require('../../utils/format.js');
 
 Page({
   data: {
@@ -19,6 +19,7 @@ Page({
     call('System.Order.orderDetail', { order_id: this.orderId }).then((order) => {
       order.statusInfo = orderStatus(order.status);
       order.packages = order.packages.map((p) => ({ ...p, statusInfo: packageStatus(p.status) }));
+      order.tracks = order.tracks.map((t) => ({ ...t, time: formatTime(t.time) }));
       this.setData({ order });
     });
   },

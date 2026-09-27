@@ -106,7 +106,7 @@ Page({
     if (!this.data.selectedIds.length) return wx.showToast({ title: '请选择包裹', icon: 'none' });
     if (!this.data.lineId) return wx.showToast({ title: '请选择物流线路', icon: 'none' });
 
-    wx.showLoading({ title: '提交中...' });
+    wx.showLoading({ title: '提交中...', mask: true });
     call('System.Order.savePage', {
       address_id: this.data.address.id,
       line_id: this.data.lineId,
