@@ -15,14 +15,33 @@
   <view class="card">
     <view class="section-title">运费计算器</view>
     <view class="row">
-      <input class="input" style="flex: 1; margin-right: 16rpx;" type="digit" placeholder="包裹重量(kg)"
+      <input class="input" style="flex: 1; margin-right: 16rpx;" type="digit" placeholder="重量(kg)"
         value="{{weightInput}}" bindinput="onWeightInput" />
-      <button class="btn-outline" bindtap="onEstimateFee">计算</button>
+      <input class="input" style="flex: 1; margin-right: 16rpx;" type="digit" placeholder="价值(元，选填)"
+        value="{{valueInput}}" bindinput="onValueInput" />
+      <button class="btn-outline" size="mini" bindtap="onEstimateFee">计算</button>
     </view>
-    <view wx:for="{{feeResult}}" wx:key="line_id" class="row" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;">
-      <view>{{item.name}}</view>
-      <view class="muted">{{item.days_min}}-{{item.days_max}}天</view>
-      <view style="color: #2b6cff; font-weight: 600;">¥{{item.fee}}</view>
+    <view wx:for="{{feeResult}}" wx:key="line_id" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;">
+      <view class="row">
+        <view>{{item.name}}</view>
+        <view wx:if="{{item.available}}" style="color: #2b6cff; font-weight: 600;">¥{{item.fee}}</view>
+        <view wx:else class="muted">不适用</view>
+      </view>
+      <view wx:if="{{!item.available}}" class="muted">{{item.unavailable_reason}}</view>
+    </view>
+    <view class="muted" wx:if="{{feeResult.length}}" style="margin-top: 8rpx;">实际运费以仓库入库称重为准</view>
+  </view>
+
+  <view class="card">
+    <view class="section-title">国际物流费用说明</view>
+    <view wx:for="{{lines}}" wx:key="id" style="margin-bottom: 16rpx;">
+      <view style="font-weight: 600;">{{item.name}}</view>
+      <view class="muted" style="line-height: 1.6;">{{item.description}}</view>
+    </view>
+    <view wx:for="{{feeNotes}}" wx:key="index" class="muted" style="line-height: 1.6; margin-bottom: 8rpx;">· {{item}}</view>
+    <view wx:if="{{serviceWechat}}" class="row" style="margin-top: 12rpx;">
+      <view>客服微信：{{serviceWechat}}</view>
+      <button size="mini" class="btn-outline" bindtap="onCopyWechat">复制</button>
     </view>
   </view>
 

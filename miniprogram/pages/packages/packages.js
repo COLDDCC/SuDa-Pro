@@ -1,5 +1,5 @@
 const { call } = require('../../utils/request.js');
-const { packageStatus } = require('../../utils/format.js');
+const { packageStatus, LOGISTICS_OPTIONS } = require('../../utils/format.js');
 
 const TABS = [
   { key: '', label: '全部' },
@@ -14,6 +14,7 @@ Page({
     tabs: TABS,
     activeTab: '',
     list: [],
+    logisticsOptions: LOGISTICS_OPTIONS,
   },
 
   onShow() {
@@ -52,6 +53,16 @@ Page({
         if (!res.confirm) return;
         call('System.Order.delectGood', { id }).then(() => this.loadList());
       },
+    });
+  },
+
+  // 还没入库的包裹，用户可以更新它现在的物流状态（比如卖家终于发货了）
+  onLogisticsChange(e) {
+    const id = e.currentTarget.dataset.id;
+    const option = LOGISTICS_OPTIONS[Number(e.detail.value)];
+    call('System.Order.updateForecast', { id, logistics_status: option.value }).then(() => {
+      wx.showToast({ title: '已更新', icon: 'none' });
+      this.loadList();
     });
   },
 

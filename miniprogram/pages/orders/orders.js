@@ -3,7 +3,7 @@ const { orderStatus } = require('../../utils/format.js');
 
 const TABS = [
   { key: '', label: '全部' },
-  { key: 'pending', label: '待发货' },
+  { key: 'pending', label: '未发货' },
   { key: 'shipped', label: '运输中' },
   { key: 'signed', label: '已签收' },
   { key: 'closed', label: '已关闭' },
@@ -47,7 +47,7 @@ Page({
     call('System.Order.order', params)
       .then((res) => {
         if (seq !== this.loadSeq) return;
-        const newRows = res.list.map((o) => ({ ...o, statusInfo: orderStatus(o.status) }));
+        const newRows = res.list.map((o) => ({ ...o, statusInfo: orderStatus(o.display_status) }));
         const list = reset ? newRows : this.data.list.concat(newRows);
         this.setData({
           list,

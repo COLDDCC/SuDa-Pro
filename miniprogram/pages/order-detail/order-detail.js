@@ -15,12 +15,42 @@ Page({
     this.loadDetail();
   },
 
-  loadDetail() {
-    call('System.Order.orderDetail', { order_id: this.orderId }).then((order) => {
-      order.statusInfo = orderStatus(order.status);
-      order.packages = order.packages.map((p) => ({ ...p, statusInfo: packageStatus(p.status) }));
-      order.tracks = order.tracks.map((t) => ({ ...t, time: formatTime(t.time) }));
-      this.setData({ order });
+  onPullDownRefresh() {
+    this.loadDetail(() => wx.stopPullDownRefresh());
+  },
+
+  loadDetail(done) {
+    call('System.Order.orderDetail', { order_id: this.orderId })
+      .then((order) => {
+        order.statusInfo = orderStatus(order.display_status);
+        order.hasStorageFee = Number(order.storage_fee) > 0;
+        order.packages = order.packages.map((p) => ({ ...p, statusInfo: packageStatus(p.status) }));
+        // 最新的轨迹放最上面
+        order.tracks = order.tracks.map((t) => ({ ...t, time: formatTime(t.time) })).reverse();
+        this.setData({ order });
+      })
+      .finally(() => done && done());
+  },
+
+  onCopyWechat() {
+    wx.setClipboardData({ data: this.data.order.service_wechat });
+  },
+
+  onCopyInter() {
+    wx.setClipboardData({ data: this.data.order.inter_order });
+  },
+
+  onConfirmReceipt() {
+    wx.showModal({
+      title: '确认收货',
+      content: '确认已经收到这个订单的全部包裹了吗？',
+      success: (res) => {
+        if (!res.confirm) return;
+        call('System.Order.confirmReceipt', { order_id: this.orderId }).then(() => {
+          wx.showToast({ title: '已确认收货' });
+          this.loadDetail();
+        });
+      },
     });
   },
 

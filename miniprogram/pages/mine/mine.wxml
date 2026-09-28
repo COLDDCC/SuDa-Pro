@@ -1,19 +1,33 @@
 <view class="container" wx:if="{{member}}">
-  <view class="card row">
-    <view>
-      <view style="font-size: 32rpx; font-weight: 600;">{{member.nickname || '未设置昵称'}}</view>
-      <view class="muted">{{member.mobile || '未绑定手机号'}}</view>
+  <view class="card" wx:if="{{!editing}}">
+    <view class="row">
+      <view>
+        <view style="font-size: 32rpx; font-weight: 600;">{{member.nickname || '未设置昵称'}}</view>
+        <view class="muted">{{member.mobile || '未填写手机号'}}</view>
+      </view>
+      <button size="mini" class="btn-outline" bindtap="onEdit">编辑</button>
+    </view>
+    <view class="muted" wx:if="{{!member.nickname || !member.mobile}}" style="margin-top: 12rpx; color: #d97706;">
+      填好昵称和手机号，仓库收到包裹时才能认出是你的
+    </view>
+  </view>
+
+  <view class="card" wx:else>
+    <input class="input" placeholder="昵称 *" data-field="nickname" value="{{nickname}}" bindinput="onFieldInput" />
+    <input class="input" type="number" placeholder="手机号" data-field="mobile" value="{{mobile}}" bindinput="onFieldInput" />
+    <view class="row">
+      <button class="btn-outline" style="width: 45%;" bindtap="onCancelEdit">取消</button>
+      <button class="btn-primary" style="width: 45%;" bindtap="onSaveProfile">保存</button>
     </view>
   </view>
 
   <view class="card">
     <view class="row" style="padding: 8rpx 0;">
-      <view class="muted">清关码</view>
-      <view>{{member.cn_code}}</view>
+      <view class="muted">会员代码（寄到日本仓时写在收件人后面）</view>
     </view>
-    <view class="row" style="padding: 8rpx 0;">
-      <view class="muted">账户余额</view>
-      <view>¥{{member.balance}}</view>
+    <view class="row">
+      <view style="font-size: 36rpx; font-weight: 600; letter-spacing: 4rpx;">{{member.cn_code}}</view>
+      <button size="mini" class="btn-outline" bindtap="onCopyCode">复制</button>
     </view>
   </view>
 
@@ -22,6 +36,11 @@
       <view>收件地址管理</view>
       <view class="muted">›</view>
     </view>
+  </view>
+
+  <view class="card row" wx:if="{{serviceWechat}}">
+    <view>客服微信：{{serviceWechat}}</view>
+    <button size="mini" class="btn-outline" bindtap="onCopyWechat">复制</button>
   </view>
 
   <button class="btn-outline" bindtap="onLogout">退出登录</button>

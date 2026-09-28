@@ -6,12 +6,21 @@ const PACKAGE_STATUS = {
   cancelled: { text: '已取消', cls: 'tag-cancelled' },
 };
 
+// key 是后端返回的 display_status：未发货的订单细分成 待入库称重 / 待付款 / 待发货
 const ORDER_STATUS = {
-  pending: { text: '待发货', cls: 'tag-pending' },
+  awaiting_weigh: { text: '待入库称重', cls: 'tag-pending' },
+  awaiting_payment: { text: '待付款', cls: 'tag-pending' },
+  pending: { text: '待发货', cls: 'tag-ordered' },
   shipped: { text: '运输中', cls: 'tag-shipped' },
   signed: { text: '已签收', cls: 'tag-inbound' },
   closed: { text: '已关闭', cls: 'tag-closed' },
 };
+
+const LOGISTICS_OPTIONS = [
+  { value: 'not_shipped', text: '卖家未发货' },
+  { value: 'in_transit', text: '已发货，在路上' },
+  { value: 'delivered', text: '快递显示已签收' },
+];
 
 function packageStatus(status) {
   return PACKAGE_STATUS[status] || { text: status, cls: '' };
@@ -32,4 +41,4 @@ function formatTime(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-module.exports = { packageStatus, orderStatus, formatTime };
+module.exports = { packageStatus, orderStatus, formatTime, LOGISTICS_OPTIONS };

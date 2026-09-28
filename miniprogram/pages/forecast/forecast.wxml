@@ -1,24 +1,38 @@
 <view class="container">
   <view class="card">
+    <view class="section-title">包裹预报</view>
+    <view class="muted" style="margin-bottom: 20rpx;">告诉我们有个包裹要寄到日本仓，填快递单号就行，重量以仓库入库称重为准</view>
+
+    <input class="input" placeholder="日本国内快递单号 *" data-field="express_num" value="{{form.express_num}}" bindinput="onFieldInput" />
+
+    <picker range="{{logisticsOptions}}" range-key="text" value="{{logisticsIndex}}" bindchange="onLogisticsChange">
+      <view class="input row">
+        <view class="muted">包裹现在的状态</view>
+        <view>{{logisticsOptions[logisticsIndex].text}} ›</view>
+      </view>
+    </picker>
+
+    <view class="row muted" style="margin-bottom: 20rpx;" bindtap="onToggleMore">
+      <view>更多信息（选填）</view>
+      <view>{{showMore ? '收起' : '展开'}}</view>
+    </view>
+    <view wx:if="{{showMore}}">
+      <input class="input" placeholder="商品名称" data-field="good_name" value="{{form.good_name}}" bindinput="onFieldInput" />
+      <input class="input" type="number" placeholder="数量" data-field="count" value="{{form.count}}" bindinput="onFieldInput" />
+      <input class="input" type="digit" placeholder="大概重量(kg)，用于入库前预估运费" data-field="netwt" value="{{form.netwt}}" bindinput="onFieldInput" />
+      <input class="input" type="digit" placeholder="商品价值(元)，精致小限400元内，无忧草限1000元内" data-field="price" value="{{form.price}}" bindinput="onFieldInput" />
+      <input class="input" type="digit" placeholder="海关申报价值(元，留空同商品价值)" data-field="cc_registered_price" value="{{form.cc_registered_price}}" bindinput="onFieldInput" />
+    </view>
+
+    <button class="btn-primary" bindtap="onSubmit">提交预报</button>
+  </view>
+
+  <view class="card">
     <view class="section-title">自动识别单号（可选）</view>
     <view class="muted" style="margin-bottom: 16rpx;">
       拍下快递单照片，用手机自带的"提取图中文字"功能复制文字，粘贴到下面，帮你自动填单号
     </view>
     <textarea class="input" style="height: 120rpx;" placeholder="粘贴快递单上的文字…" value="{{pasteText}}" bindinput="onPasteTextInput" />
     <button class="btn-outline" bindtap="onRecognize">自动识别单号</button>
-  </view>
-
-  <view class="card">
-    <view class="section-title">包裹预报</view>
-    <view class="muted" style="margin-bottom: 20rpx;">告诉我们有个包裹要寄到日本仓，方便我们核对入库</view>
-
-    <input class="input" placeholder="日本国内快递单号 *" data-field="express_num" value="{{form.express_num}}" bindinput="onFieldInput" />
-    <input class="input" placeholder="商品名称 *" data-field="good_name" value="{{form.good_name}}" bindinput="onFieldInput" />
-    <input class="input" type="number" placeholder="数量" data-field="count" value="{{form.count}}" bindinput="onFieldInput" />
-    <input class="input" type="digit" placeholder="净重(kg)" data-field="netwt" value="{{form.netwt}}" bindinput="onFieldInput" />
-    <input class="input" type="digit" placeholder="商品价值(元)" data-field="price" value="{{form.price}}" bindinput="onFieldInput" />
-    <input class="input" type="digit" placeholder="海关申报价值(元，留空同商品价值)" data-field="cc_registered_price" value="{{form.cc_registered_price}}" bindinput="onFieldInput" />
-
-    <button class="btn-primary" bindtap="onSubmit">提交预报</button>
   </view>
 </view>

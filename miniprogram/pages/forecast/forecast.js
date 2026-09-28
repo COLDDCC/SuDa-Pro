@@ -1,4 +1,6 @@
 const { call } = require('../../utils/request.js');
+const { LOGISTICS_OPTIONS } = require('../../utils/format.js');
+const subscribe = require('../../utils/subscribe.js');
 
 Page({
   data: {
@@ -10,12 +12,27 @@ Page({
       price: '',
       cc_registered_price: '',
     },
+    logisticsOptions: LOGISTICS_OPTIONS,
+    logisticsIndex: 1, // 默认"已发货，在路上"
+    showMore: false,
     pasteText: '',
+  },
+
+  onLoad() {
+    subscribe.prefetch();
   },
 
   onFieldInput(e) {
     const { field } = e.currentTarget.dataset;
     this.setData({ [`form.${field}`]: e.detail.value });
+  },
+
+  onLogisticsChange(e) {
+    this.setData({ logisticsIndex: Number(e.detail.value) });
+  },
+
+  onToggleMore() {
+    this.setData({ showMore: !this.data.showMore });
   },
 
   onPasteTextInput(e) {
@@ -42,23 +59,31 @@ Page({
 
   onSubmit() {
     const f = this.data.form;
-    if (!f.express_num) return wx.showToast({ title: '请填写快递单号', icon: 'none' });
-    if (!f.good_name) return wx.showToast({ title: '请填写品名', icon: 'none' });
+    const expressNum = f.express_num.trim();
+    if (!expressNum) return wx.showToast({ title: '请填写快递单号', icon: 'none' });
 
-    wx.showLoading({ title: '提交中...', mask: true }); // 挡住连点，不然会预报出重复包裹
-    call('System.Order.addforecast', {
-      express_num: f.express_num,
-      good_name: f.good_name,
-      count: Number(f.count) || 1,
-      netwt: Number(f.netwt) || 0,
-      price: Number(f.price) || 0,
-      cc_registered_price: Number(f.cc_registered_price) || Number(f.price) || 0,
-    })
-      .then(() => {
-        wx.hideLoading();
-        wx.showToast({ title: '预报成功' });
-        setTimeout(() => wx.switchTab({ url: '/pages/packages/packages' }), 800);
-      })
-      .catch(() => wx.hideLoading());
+    const params = {
+      express_num: expressNum,
+      logistics_status: LOGISTICS_OPTIONS[this.data.logisticsIndex].value,
+    };
+    // 选填项：填了才传，没填由后端用默认值（重量以入库称重为准）
+    if (f.good_name.trim()) params.good_name = f.good_name.trim();
+    if (Number(f.count) > 0) params.count = Number(f.count);
+    if (Number(f.netwt) > 0) params.netwt = Number(f.netwt);
+    if (Number(f.price) > 0) params.price = Number(f.price);
+    const declared = Number(f.cc_registered_price) || Number(f.price);
+    if (declared > 0) params.cc_registered_price = declared;
+
+    // 先弹"包裹入库时通知我"的订阅授权（必须在点击回调里同步调用），再提交
+    subscribe.request(['inbound']).then(() => {
+      wx.showLoading({ title: '提交中...', mask: true }); // 挡住连点，不然会预报出重复包裹
+      call('System.Order.addforecast', params)
+        .then(() => {
+          wx.hideLoading();
+          wx.showToast({ title: '预报成功' });
+          setTimeout(() => wx.switchTab({ url: '/pages/packages/packages' }), 800);
+        })
+        .catch(() => wx.hideLoading());
+    });
   },
 });

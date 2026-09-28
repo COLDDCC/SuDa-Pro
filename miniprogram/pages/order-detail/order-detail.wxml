@@ -4,9 +4,34 @@
     <view class="tag {{order.statusInfo.cls}}">{{order.statusInfo.text}}</view>
   </view>
 
+  <view class="card" wx:if="{{order.display_status === 'awaiting_weigh'}}">
+    <view class="section-title">等待仓库入库称重</view>
+    <view class="muted" style="line-height: 1.6;">包裹全部到仓、称完重之后，运费就确定了，到时候在这里付款。现在显示的金额是预估的。</view>
+  </view>
+
+  <view class="card" wx:if="{{order.display_status === 'awaiting_payment'}}">
+    <view class="section-title">请付款 ¥{{order.total_fee}}</view>
+    <view class="muted" style="line-height: 1.6;">
+      添加客服微信，转账 ¥{{order.total_fee}} 并备注订单号 {{order.order_no}}，客服确认收款后就给你安排发货。
+    </view>
+    <view class="row" style="margin-top: 16rpx;" wx:if="{{order.service_wechat}}">
+      <view>客服微信：{{order.service_wechat}}</view>
+      <button size="mini" class="btn-outline" bindtap="onCopyWechat">复制</button>
+    </view>
+    <view class="muted" wx:else style="margin-top: 16rpx;">请联系客服付款</view>
+  </view>
+
+  <view class="card" wx:if="{{order.display_status === 'pending'}}">
+    <view class="section-title">已付款，等待发货</view>
+    <view class="muted">一周五个航班（周二至周六），大连港清关</view>
+  </view>
+
   <view class="card" wx:if="{{order.inter_order}}">
     <view class="section-title">国际转运单号</view>
-    <view>{{order.inter_order}}</view>
+    <view class="row">
+      <view>{{order.inter_order}}</view>
+      <button size="mini" class="btn-outline" bindtap="onCopyInter">复制</button>
+    </view>
   </view>
 
   <view class="card">
@@ -19,17 +44,21 @@
     <view class="section-title">包裹清单（{{order.packages.length}}件）</view>
     <view wx:for="{{order.packages}}" wx:key="id" style="padding: 12rpx 0; border-top: 1rpx solid #f0f0f0;">
       <view class="row">
-        <view>{{item.good_name}}</view>
-        <view class="tag {{item.statusInfo.cls}}">{{item.statusInfo.text}}</view>
+        <view>{{item.good_name || item.express_num}}</view>
+        <view class="muted" wx:if="{{item.actual_weight}}">{{item.actual_weight}}kg</view>
+        <view class="muted" wx:else>未称重</view>
       </view>
-      <view class="muted">净重 {{item.netwt}}kg</view>
     </view>
   </view>
 
   <view class="card">
-    <view class="section-title">费用</view>
-    <view class="row">
-      <view class="muted">线路：{{order.line_name}}</view>
+    <view class="section-title">费用{{order.weight_confirmed ? '' : '（预估）'}}</view>
+    <view class="row muted"><view>线路</view><view>{{order.line_name}}</view></view>
+    <view class="row muted"><view>计费重量</view><view>{{order.total_weight}}kg</view></view>
+    <view class="row muted"><view>运费</view><view>¥{{order.shipping_fee}}</view></view>
+    <view class="row muted" wx:if="{{order.hasStorageFee}}"><view>囤货费（超出免费期）</view><view>¥{{order.storage_fee}}</view></view>
+    <view class="row" style="margin-top: 8rpx;">
+      <view>合计{{order.paid ? '（已付款）' : ''}}</view>
       <view style="color: #2b6cff; font-weight: 700;">¥{{order.total_fee}}</view>
     </view>
   </view>
@@ -43,5 +72,6 @@
     </view>
   </view>
 
-  <button wx:if="{{order.status === 'pending'}}" class="btn-outline" bindtap="onCloseOrder">关闭订单</button>
+  <button wx:if="{{order.status === 'shipped'}}" class="btn-primary" bindtap="onConfirmReceipt">确认收货</button>
+  <button wx:if="{{order.status === 'pending' && !order.paid}}" class="btn-outline" style="margin-top: 20rpx;" bindtap="onCloseOrder">关闭订单</button>
 </view>

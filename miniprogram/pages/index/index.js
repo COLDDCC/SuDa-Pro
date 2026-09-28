@@ -4,7 +4,11 @@ Page({
   data: {
     warehouse: null,
     notices: [],
+    lines: [],
+    feeNotes: [],
+    serviceWechat: '',
     weightInput: '',
+    valueInput: '',
     feeResult: [],
   },
 
@@ -12,6 +16,7 @@ Page({
     if (!getApp().ensureLogin()) return;
     this.loadWarehouse();
     this.loadNotices();
+    this.loadFeeInfo();
   },
 
   loadWarehouse() {
@@ -28,6 +33,14 @@ Page({
       .catch(() => {});
   },
 
+  // 「国际物流费用说明」：线路价格 + 囤货/航班等规则
+  loadFeeInfo() {
+    call('System.Address.lineList', {}).then((lines) => this.setData({ lines })).catch(() => {});
+    call('System.Config.feeNotes', {})
+      .then((res) => this.setData({ feeNotes: res.notes, serviceWechat: res.service_wechat }))
+      .catch(() => {});
+  },
+
   onCopyAddress() {
     if (!this.data.warehouse) return;
     const w = this.data.warehouse;
@@ -36,8 +49,16 @@ Page({
     });
   },
 
+  onCopyWechat() {
+    if (this.data.serviceWechat) wx.setClipboardData({ data: this.data.serviceWechat });
+  },
+
   onWeightInput(e) {
     this.setData({ weightInput: e.detail.value });
+  },
+
+  onValueInput(e) {
+    this.setData({ valueInput: e.detail.value });
   },
 
   onEstimateFee() {
@@ -46,7 +67,10 @@ Page({
       wx.showToast({ title: '请输入有效重量(kg)', icon: 'none' });
       return;
     }
-    call('System.Address.estimateFee', { weight })
+    const params = { weight };
+    const value = parseFloat(this.data.valueInput);
+    if (value > 0) params.value = value;
+    call('System.Address.estimateFee', params)
       .then((result) => this.setData({ feeResult: result }))
       .catch(() => {});
   },

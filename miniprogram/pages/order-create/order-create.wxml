@@ -15,8 +15,9 @@
       data-id="{{item.id}}" bindtap="onTogglePackage">
       <checkbox checked="{{selectedIds.indexOf(item.id) > -1}}" />
       <view style="flex: 1; margin-left: 12rpx;">
-        <view>{{item.good_name}}</view>
-        <view class="muted">净重 {{item.netwt}}kg · ¥{{item.price}}</view>
+        <view>{{item.good_name || item.express_num}}</view>
+        <view class="muted" wx:if="{{item.actual_weight}}">仓库称重 {{item.actual_weight}}kg</view>
+        <view class="muted" wx:else>未入库{{item.netwt > 0 ? '，预报重量 ' + item.netwt + 'kg' : ''}}</view>
       </view>
     </view>
   </view>
@@ -29,6 +30,8 @@
         <view class="muted">点击切换</view>
       </view>
     </picker>
+    <view class="muted" style="line-height: 1.6;">{{selectedLineDesc}}</view>
+    <view wx:if="{{lineUnavailable}}" style="color: #e5484d; font-size: 24rpx; margin-top: 8rpx;">{{lineUnavailable}}</view>
   </view>
 
   <view class="card">
@@ -36,9 +39,13 @@
     <input class="input" placeholder="给客服的备注（选填）" value="{{remark}}" bindinput="onRemarkInput" />
   </view>
 
-  <view class="card row">
-    <view>预估重量 {{totalWeight}}kg</view>
-    <view style="color: #2b6cff; font-weight: 700; font-size: 32rpx;">¥{{totalFee}}</view>
+  <view class="card">
+    <view class="row">
+      <view>{{feeEstimated ? '预估' : '计费'}}重量 {{totalWeight}}kg</view>
+      <view style="color: #2b6cff; font-weight: 700; font-size: 32rpx;">¥{{totalFee}}</view>
+    </view>
+    <view class="muted" style="margin-top: 8rpx;" wx:if="{{feeEstimated}}">有包裹还没入库，运费是预估的，以仓库称重为准</view>
+    <view class="muted" style="margin-top: 8rpx;">下单后在订单里确认金额，添加客服微信转账</view>
   </view>
 
   <button class="btn-primary" bindtap="onSubmit">提交订单</button>
