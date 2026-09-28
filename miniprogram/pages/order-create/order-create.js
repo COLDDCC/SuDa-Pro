@@ -116,7 +116,8 @@ Page({
       .then(() => {
         wx.hideLoading();
         wx.showToast({ title: '下单成功' });
-        setTimeout(() => wx.redirectTo({ url: '/pages/orders/orders' }), 800);
+        // orders 是 tabBar 页，redirectTo/navigateTo 跳 tabBar 页会直接失败，必须用 switchTab
+        setTimeout(() => wx.switchTab({ url: '/pages/orders/orders' }), 800);
       })
       .catch(() => wx.hideLoading());
   },

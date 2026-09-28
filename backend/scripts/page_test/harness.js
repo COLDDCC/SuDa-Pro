@@ -2,6 +2,13 @@
 const path = require('path');
 const MP = path.resolve(__dirname, '../../../miniprogram');
 const storage = {};
+const TABBAR = JSON.parse(require('fs').readFileSync(path.join(MP, 'app.json'))).tabBar.list.map((t) => '/' + t.pagePath);
+const isTab = (url) => TABBAR.includes(url.split('?')[0]);
+// 跟真机一样：navigateTo/redirectTo 不能去 tabBar 页，switchTab 只能去 tabBar 页，违反时抛错让测试失败
+function nav(kind, o, tabOnly) {
+  if (isTab(o.url) !== tabOnly) throw new Error(`wx.${kind} cannot open ${o.url}`);
+  log.push([kind, o.url, o]);
+}
 const log = [];
 let pending = 0;
 global.wx = {
@@ -13,10 +20,10 @@ global.wx = {
   hideLoading: () => {},
   showModal: (o) => o.success({ confirm: true }),
   reLaunch: (o) => log.push(['reLaunch', o.url]),
-  navigateTo: (o) => log.push(['navigateTo', o.url, o]),
+  navigateTo: (o) => nav('navigateTo', o, false),
   navigateBack: () => log.push(['navigateBack']),
-  redirectTo: (o) => log.push(['redirectTo', o.url]),
-  switchTab: (o) => log.push(['switchTab', o.url]),
+  redirectTo: (o) => nav('redirectTo', o, false),
+  switchTab: (o) => nav('switchTab', o, true),
   stopPullDownRefresh: () => {},
   request(o) {
     pending++;

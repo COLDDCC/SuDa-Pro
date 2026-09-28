@@ -56,6 +56,8 @@ const toasts = () => log.filter((l) => l[0] === 'toast').map((l) => l[1]);
   ok(pg.data.selectedIds.includes(pkg0.id), 'package selection kept');
   log.length = 0; pg.onSubmit(); await idle();
   ok(log.some((l) => l[0] === 'loading' && l[1] === true), 'submit loading masks double taps');
+  await new Promise((r) => setTimeout(r, 900));
+  ok(log.some((l) => l[0] === 'switchTab' && l[1] === '/pages/orders/orders'), 'after ordering, lands on the orders tab (redirectTo to a tabBar page silently failed)');
   const orders = await call('System.Order.order', {});
   const detail = await call('System.Order.orderDetail', { id: orders.list[0].id });
   ok(detail.address.id === addrB.id && detail.total_fee === line3.fee, 'order was placed to the picked address and line at the displayed fee');
