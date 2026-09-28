@@ -8,7 +8,9 @@ const toasts = () => log.filter((l) => l[0] === 'toast').map((l) => l[1]);
 
 (async () => {
   storage.token = (await call('System.Login.devLogin', { identifier: 'mp-' + Date.now() })).token;
-  const base = { consigner: '李四', mobile: '13900000000', address: '人民路1号', idnumber: '110101199001011234' };
+  // 同一航次同一身份证/电话/地址不能发两单：每次跑用不同的收件信息，当天重复跑也不会撞
+  const rnd = (n) => Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join('');
+  const base = { consigner: '李四', mobile: '139' + rnd(8), address: `人民路${rnd(6)}号`, idnumber: rnd(18) };
 
   console.log('address-edit: new address');
   let pg = loadPage('address-edit');
@@ -122,6 +124,27 @@ const toasts = () => log.filter((l) => l[0] === 'toast').map((l) => l[1]);
   mine = (await call('System.Order.goodsList', {})).find((p) => p.express_num === num);
   ok(mine.logistics_status === 'in_transit', 'status updated to 已发货，在路上');
   ok(pg.data.list.find((p) => p.id === mine.id).logistics_text === '已发货，在路上', 'list refreshed with new status');
+
+  console.log('forecast: double tap submits once');
+  pg = loadPage('forecast'); pg.onLoad(); await idle();
+  const num2 = 'DT-' + Date.now();
+  pg.onFieldInput({ currentTarget: { dataset: { field: 'express_num' } }, detail: { value: num2 } });
+  log.length = 0; pg.onSubmit(); pg.onSubmit(); await idle();
+  ok((await call('System.Order.goodsList', {})).filter((p) => p.express_num === num2).length === 1 && !toasts().includes('这个单号已经预报过了，可以在「我的包裹」里查看'),
+    'second tap ignored (no duplicate, no error toast)');
+
+  console.log('order-create: selected address edited elsewhere');
+  const histAddr = await call('System.Member.addAddress', { consigner: '历史', mobile: '139' + rnd(8), address: `历史路${rnd(6)}号`, idnumber: rnd(18), province_id: 1, city_id: 1, district_id: 1 });
+  const hp = await call('System.Order.addforecast', { express_num: 'H-' + Date.now() });
+  await staff('System.Order.markInbound', { id: hp.id, actual_weight: '0.4' });
+  const ho = await call('System.Order.savePage', { address_id: histAddr.id, line_id: lines[0].line_id, package_ids: [hp.id] });
+  await staff('System.Order.markPaid', { id: ho.order_id });
+  await staff('System.Order.markShipped', { id: ho.order_id, inter_order: 'H' + Date.now() });
+  pg = loadPage('order-create'); pg.onLoad(); pg.onShow(); await idle();
+  pg.setData({ address: histAddr });
+  const edited = await call('System.Member.updateAddress', { id: histAddr.id, address: '历史路2号' });
+  pg.onShow(); await idle();
+  ok(pg.data.address && pg.data.address.id !== histAddr.id, 'order page drops the archived address instead of failing on submit');
 
   console.log('mine: nickname + phone');
   pg = loadPage('mine'); pg.onShow(); await idle();

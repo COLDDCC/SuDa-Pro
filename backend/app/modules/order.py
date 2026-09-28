@@ -56,8 +56,8 @@ def _pkg_dict(p: models.Package):
         "logistics_text": _LOGISTICS_TEXT.get(p.logistics_status, ""),
         "created_at": p.created_at.isoformat(),
         "inbound_at": p.inbound_at.isoformat() if p.inbound_at else None,
-        "storage_days_over": pricing.storage_days(p.inbound_at) if p.status in (
-            models.Package.STATUS_INBOUND, models.Package.STATUS_ORDERED) else 0,
+        # 只对"在仓库里、还没下单"的包裹提示超期：下了单的囤货费算在订单里（付款时锁定）
+        "storage_days_over": pricing.storage_days(p.inbound_at) if p.status == models.Package.STATUS_INBOUND else 0,
     }
 
 
@@ -224,12 +224,16 @@ def delectGood(db, member, params):
         raise ApiError("包裹不存在")
     if p.status == models.Package.STATUS_ORDERED or p.status == models.Package.STATUS_SHIPPED:
         raise ApiError("包裹已在订单中，无法删除")
+    if p.inbound_at is not None:
+        # 实物已经在仓库里了，删掉记录仓库就对不上账；退货/弃件走客服
+        raise ApiError("包裹已入库，不能删除，如需退货或弃件请联系客服")
     deleted = db.query(models.Package).filter(
         models.Package.id == p.id,
-        models.Package.status.in_([models.Package.STATUS_PENDING, models.Package.STATUS_INBOUND]),
+        models.Package.status == models.Package.STATUS_PENDING,
+        models.Package.inbound_at.is_(None),
     ).delete(synchronize_session=False)
     if not deleted:
-        raise ApiError("包裹已在订单中，无法删除")
+        raise ApiError("包裹状态已变化，请刷新后重试")
     # 包裹能删说明它只可能出现在已关闭的订单里；把这些订单里指向它的明细一并删掉，
     # 不然订单详情渲染到这个包裹时会拿到 None。
     db.query(models.OrderItem).filter_by(package_id=p.id).delete(synchronize_session=False)
@@ -294,19 +298,21 @@ def setWeight(db, member, params):
         raise ApiError("包裹不存在")
     if p.inbound_at is None:
         raise ApiError("包裹还没入库，请用「标记入库」")
-    paid_order = db.query(models.Order.id).join(models.OrderItem).filter(
-        models.OrderItem.package_id == p.id,
+    in_paid_order = db.query(models.OrderItem.id).join(models.Order).filter(
+        models.OrderItem.package_id == models.Package.id,
         models.Order.status != models.Order.STATUS_CLOSED,
         models.Order.paid.is_(True),
-    ).first()
-    if paid_order:
-        raise ApiError("这个包裹所在的订单已确认收款，金额已锁定，不能再改重量")
+    ).exists()
+    # "不在已收款订单里"放进 UPDATE 的条件，和 markPaid 并发时不会改到已锁定金额的订单
     updated = db.query(models.Package).filter(
         models.Package.id == p.id,
         models.Package.status.in_([models.Package.STATUS_INBOUND, models.Package.STATUS_ORDERED]),
+        ~in_paid_order,
     ).update({"actual_weight": weight}, synchronize_session=False)
     if not updated:
-        raise ApiError("包裹已发货，不能再改重量")
+        if p.status == models.Package.STATUS_SHIPPED:
+            raise ApiError("包裹已发货，不能再改重量")
+        raise ApiError("这个包裹所在的订单已确认收款，金额已锁定，不能再改重量")
     db.commit()
     db.refresh(p)
     return _pkg_dict(p)
@@ -387,11 +393,13 @@ def _declared_value(packages):
     return total if total > 0 else None
 
 
-def _fees(o: models.Order):
-    """订单当前应收的费用。已确认收款的订单用锁定下来的金额；未收款的按当前重量和囤货天数实时算。"""
+def _fees(o: models.Order, live=False):
+    """订单当前应收的费用。已确认收款的订单用锁定下来的金额；未收款的按当前重量和囤货天数实时算。
+    live=True 时忽略"已收款"，按当前数据重算（确认收款那一刻用来锁定金额）。"""
     packages = _order_packages(o)
     confirmed = pricing.weight_confirmed(packages)
-    if o.paid or o.status != models.Order.STATUS_PENDING or not o.line or o.line.first_weight is None:
+    locked = o.paid and not live
+    if locked or o.status != models.Order.STATUS_PENDING or not o.line or o.line.first_weight is None:
         return {
             "total_weight": o.total_weight, "shipping_fee": o.shipping_fee or o.total_fee,
             "storage_fee": o.storage_fee or Decimal("0"), "total_fee": o.total_fee, "weight_confirmed": confirmed,
@@ -427,9 +435,12 @@ def savePage(db, member, params):
         raise ApiError("package_ids格式不正确")
     remark = to_str(params.get("remark"), "", "备注", max_len=500)
 
-    address = db.query(models.Address).filter_by(id=address_id, member_id=member.id).first()
+    address = db.query(models.Address).filter(
+        models.Address.id == address_id, models.Address.member_id == member.id,
+        models.Address.archived.isnot(True),
+    ).first()
     if not address:
-        raise ApiError("收件地址不存在")
+        raise ApiError("收件地址不存在或已修改，请重新选择")
     if not address.idnumber:
         raise ApiError("该地址缺少实名信息（身份证号），无法用于报关，请先完善")
 
@@ -680,14 +691,20 @@ def markPaid(db, member, params):
         raise ApiError("订单不存在")
     if o.status != models.Order.STATUS_PENDING:
         raise ApiError("只有待发货的订单可以确认收款")
-    fees = _fees(o)
+    if not pricing.weight_confirmed(_order_packages(o)):
+        raise ApiError("还有包裹没入库称重，运费还没确定，不能确认收款")
+    # 先抢下"已收款"这一行（拿到写锁），再重新读重量算金额：避免读完重量、写入之前
+    # 有人改了重量，锁定的金额和实际重量对不上。setWeight 那边对已收款订单的包裹是原子拒绝的。
+    if not _set_status(db, models.Order, [o.id], [models.Order.STATUS_PENDING],
+                       {"paid": True, "paid_at": models.now()}, models.Order.paid.isnot(True)):
+        raise ApiError("这笔订单已经确认过收款了")
+    db.expire_all()
+    o = db.query(models.Order).filter_by(id=order_id).first()
+    fees = _fees(o, live=True)
     if not fees["weight_confirmed"]:
         raise ApiError("还有包裹没入库称重，运费还没确定，不能确认收款")
-    if not _set_status(db, models.Order, [o.id], [models.Order.STATUS_PENDING], {
-        "paid": True, "paid_at": models.now(), "total_weight": fees["total_weight"],
-        "shipping_fee": fees["shipping_fee"], "storage_fee": fees["storage_fee"], "total_fee": fees["total_fee"],
-    }, models.Order.paid.isnot(True)):
-        raise ApiError("这笔订单已经确认过收款了")
+    o.total_weight, o.shipping_fee, o.storage_fee, o.total_fee = (
+        fees["total_weight"], fees["shipping_fee"], fees["storage_fee"], fees["total_fee"])
     db.add(models.OrderTrack(order_id=o.id, status_text=f"已确认收款 ¥{fees['total_fee']}，等待发货",
                              location="日本仓", source="system"))
     db.commit()

@@ -74,16 +74,19 @@ Page({
     const declared = Number(f.cc_registered_price) || Number(f.price);
     if (declared > 0) params.cc_registered_price = declared;
 
+    // 订阅弹窗和请求之间有空档，loading 的 mask 挡不住这段时间的连点，用标记位兜住
+    if (this.submitting) return;
+    this.submitting = true;
     // 先弹"包裹入库时通知我"的订阅授权（必须在点击回调里同步调用），再提交
     subscribe.request(['inbound']).then(() => {
-      wx.showLoading({ title: '提交中...', mask: true }); // 挡住连点，不然会预报出重复包裹
+      wx.showLoading({ title: '提交中...', mask: true });
       call('System.Order.addforecast', params)
         .then(() => {
           wx.hideLoading();
           wx.showToast({ title: '预报成功' });
           setTimeout(() => wx.switchTab({ url: '/pages/packages/packages' }), 800);
         })
-        .catch(() => wx.hideLoading());
+        .catch(() => { wx.hideLoading(); this.submitting = false; });
     });
   },
 });

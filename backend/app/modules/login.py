@@ -19,7 +19,7 @@ WX_CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session"
 
 def _code2session(code: str):
     if not WX_APPID or not WX_SECRET:
-        raise ApiError("服务端未配置微信 AppID/Secret，请使用 devLogin 联调", code=500)
+        raise ApiError("服务端未配置微信 AppID/Secret，请使用本地联调登录", code=503)
     try:
         resp = httpx.get(WX_CODE2SESSION_URL, params={
             "appid": WX_APPID,

@@ -118,11 +118,31 @@ def checkConsignerInfo(db, member, params):
     return {"ok": True}
 
 
+def _my_addresses(db, member):
+    return db.query(models.Address).filter(
+        models.Address.member_id == member.id, models.Address.archived.isnot(True))
+
+
+def _my_address(db, member, addr_id):
+    a = _my_addresses(db, member).filter(models.Address.id == addr_id).first()
+    if not a:
+        raise ApiError("地址不存在")
+    return a
+
+
+def _orders_using(db, addr_id, statuses):
+    return db.query(models.Order.id).filter(
+        models.Order.address_id == addr_id, models.Order.status.in_(statuses)).first() is not None
+
+
+_HISTORY_STATUSES = (models.Order.STATUS_SHIPPED, models.Order.STATUS_SIGNED, models.Order.STATUS_CLOSED)
+
+
 def addAddress(db, member, params):
     a = models.Address(member_id=member.id)
     _apply_address_fields(a, params)
     _validate_address(a)
-    if to_bool(params.get("is_default")) or db.query(models.Address).filter_by(member_id=member.id).count() == 0:
+    if to_bool(params.get("is_default")) or _my_addresses(db, member).count() == 0:
         _clear_default(db, member.id)
         a.is_default = True
     db.add(a)
@@ -132,17 +152,33 @@ def addAddress(db, member, params):
 
 
 def updateAddress(db, member, params):
+    """修改地址。订单不存收件信息副本、只引用地址记录，所以：
+    - 地址被已发货/已关闭的订单用过：原记录是历史，不能改。归档原记录，改动另存一条新地址，
+      还没发货的订单跟着换到新地址上（用户改地址就是想让后面的包裹寄到新地址）
+    - 否则直接改（包括只被未发货订单用着的情况——发货前改地址是正常需求）"""
     addr_id = to_id(params.get("id"))
-    a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
-    if not a:
-        raise ApiError("地址不存在")
-    _apply_address_fields(a, params)
-    _validate_address(a)
+    old = _my_address(db, member, addr_id)
+    target = old
+    if _orders_using(db, old.id, _HISTORY_STATUSES):
+        target = models.Address(member_id=member.id, is_default=old.is_default, **{
+            f: getattr(old, f) for f in ("consigner", "mobile", "province_id", "city_id", "district_id",
+                                         "address", "idnumber", "addressimg")})
+    _apply_address_fields(target, params)
+    _validate_address(target)
+    if target is not old:
+        db.add(target)
+        db.flush()
+        old.archived = True
+        old.is_default = False
+        db.query(models.Order).filter(
+            models.Order.address_id == old.id, models.Order.status == models.Order.STATUS_PENDING,
+        ).update({"address_id": target.id}, synchronize_session=False)
     if to_bool(params.get("is_default")):
         _clear_default(db, member.id)
-        a.is_default = True
+        target.is_default = True
     db.commit()
-    return _addr_dict(a)
+    db.refresh(target)
+    return _addr_dict(target)
 
 
 def _apply_address_fields(a: models.Address, params):
@@ -182,28 +218,26 @@ def _clear_default(db, member_id):
 
 def addressDelete(db, member, params):
     addr_id = to_id(params.get("id"))
-    a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
-    if not a:
-        raise ApiError("地址不存在")
-    in_use = db.query(models.Order.id).filter_by(address_id=addr_id).first()
-    if in_use:
-        raise ApiError("该地址已被订单使用，无法删除")
-    db.delete(a)
+    a = _my_address(db, member, addr_id)
+    if _orders_using(db, a.id, (models.Order.STATUS_PENDING,)):
+        raise ApiError("有还没发货的订单在用这个地址，发货后再删，或者先修改订单")
+    if _orders_using(db, a.id, _HISTORY_STATUSES):
+        a.archived = True  # 历史订单还要显示它，只是不再出现在地址列表里
+        a.is_default = False
+    else:
+        db.delete(a)
     db.commit()
     return {"ok": True}
 
 
 def addressDetail(db, member, params):
     addr_id = to_id(params.get("id"))
-    a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
-    if not a:
-        raise ApiError("地址不存在")
-    return _addr_dict(a)
+    return _addr_dict(_my_address(db, member, addr_id))
 
 
 def memberAddressList(db, member, params):
     keyword = to_str(params.get("keyword"), "", "keyword")
-    q = db.query(models.Address).filter_by(member_id=member.id)
+    q = _my_addresses(db, member)
     if keyword:
         q = q.filter(models.Address.consigner.contains(keyword) | models.Address.address.contains(keyword))
     rows = q.order_by(models.Address.is_default.desc(), models.Address.id.desc()).all()
@@ -212,9 +246,7 @@ def memberAddressList(db, member, params):
 
 def modifyAddressDefault(db, member, params):
     addr_id = to_id(params.get("id"))
-    a = db.query(models.Address).filter_by(id=addr_id, member_id=member.id).first()
-    if not a:
-        raise ApiError("地址不存在")
+    a = _my_address(db, member, addr_id)
     _clear_default(db, member.id)
     a.is_default = True
     db.commit()
@@ -223,7 +255,7 @@ def modifyAddressDefault(db, member, params):
 
 def getMemberAddress(db, member, params):
     """默认收件地址，下单页快速带出"""
-    a = db.query(models.Address).filter_by(member_id=member.id, is_default=True).first()
+    a = _my_addresses(db, member).filter(models.Address.is_default.is_(True)).first()
     if not a:
-        a = db.query(models.Address).filter_by(member_id=member.id).order_by(models.Address.id.desc()).first()
+        a = _my_addresses(db, member).order_by(models.Address.id.desc()).first()
     return _addr_dict(a) if a else None

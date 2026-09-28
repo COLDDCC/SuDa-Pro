@@ -19,12 +19,10 @@
     <view class="muted" wx:if="{{item.storage_days_over > 0}}" style="color: #d97706;">
       已超过免费囤货期 {{item.storage_days_over}} 天，按 1 元/天 收取囤货费，尽快下单哦
     </view>
-    <view class="row" style="margin-top: 16rpx;" wx:if="{{item.status === 'pending' || item.status === 'inbound'}}">
-      <picker wx:if="{{!item.inbound_at}}" range="{{logisticsOptions}}" range-key="text"
-        data-id="{{item.id}}" bindchange="onLogisticsChange">
+    <view class="row" style="margin-top: 16rpx;" wx:if="{{item.status === 'pending' && !item.inbound_at}}">
+      <picker range="{{logisticsOptions}}" range-key="text" data-id="{{item.id}}" bindchange="onLogisticsChange">
         <button size="mini" class="btn-outline">改状态</button>
       </picker>
-      <view wx:else></view>
       <button size="mini" class="btn-outline" data-id="{{item.id}}" bindtap="onDelete">删除</button>
     </view>
   </view>

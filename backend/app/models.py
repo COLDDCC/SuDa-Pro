@@ -54,6 +54,9 @@ class Address(Base):
     idnumber = Column(String(32), default="")  # 身份证号，报关实名用
     addressimg = Column(String(255), default="")
     is_default = Column(Boolean, default=False)
+    # 已发货/已关闭的订单还引用着的地址，用户修改或删除时不动原记录（那是订单的历史收件信息），
+    # 而是把它归档（列表里不再显示），修改的内容另存一条新地址。
+    archived = Column(Boolean, default=False)
     created_at = Column(DateTime, default=now)
 
     member = relationship("Member", back_populates="addresses")

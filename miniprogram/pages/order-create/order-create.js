@@ -28,6 +28,17 @@ Page({
     this.loadPackages();
     this.loadLines();
     if (!this.data.address) this.loadDefaultAddress();
+    else this.revalidateAddress();
+  },
+
+  // 选中的地址可能在地址页被改过（被历史订单用过的地址修改时会另存成新地址、旧的归档），
+  // 或者被删了：不在列表里了就换成默认地址，免得提交时才报"地址不存在"
+  revalidateAddress() {
+    call('System.Member.memberAddressList', {}).then((list) => {
+      const current = this.data.address && list.find((a) => a.id === this.data.address.id);
+      if (current) this.setData({ address: current });
+      else this.setData({ address: list.find((a) => a.is_default) || list[0] || null });
+    });
   },
 
   loadPackages() {
@@ -132,6 +143,9 @@ Page({
       package_ids: this.data.selectedIds,
       remark: this.data.remark,
     };
+    // 订阅弹窗和请求之间有空档，loading 的 mask 挡不住这段时间的连点，用标记位兜住
+    if (this.submitting) return;
+    this.submitting = true;
     // 先弹"发货/签收时通知我"的订阅授权（必须在点击回调里同步调用），再提交
     subscribe.request(['shipped', 'signed']).then(() => {
       wx.showLoading({ title: '提交中...', mask: true });
@@ -142,7 +156,7 @@ Page({
           // orders 是 tabBar 页，redirectTo/navigateTo 跳 tabBar 页会直接失败，必须用 switchTab
           setTimeout(() => wx.switchTab({ url: '/pages/orders/orders' }), 800);
         })
-        .catch(() => wx.hideLoading());
+        .catch(() => { wx.hideLoading(); this.submitting = false; });
     });
   },
 });
