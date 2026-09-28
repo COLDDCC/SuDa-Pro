@@ -3,11 +3,12 @@
 Run with: python -m app.seed
 """
 from .database import Base, engine, SessionLocal
-from . import models
+from . import models, migrate
 
 
 def run():
     Base.metadata.create_all(bind=engine)
+    migrate.run()
     db = SessionLocal()
     try:
         if db.query(models.Warehouse).count() == 0:
@@ -20,15 +21,7 @@ def run():
                 contact="+81-3-0000-0000",
                 note="收货后 1-2 个工作日内入库，入库后请在小程序内核对包裹信息。",
             ))
-        if db.query(models.Line).count() == 0:
-            db.add_all([
-                models.Line(shop_id=1, name="标准海运专线", description="经济实惠，适合大件不急用",
-                            price_per_kg=38, min_weight=0.5, days_min=15, days_max=25),
-                models.Line(shop_id=1, name="标准空运专线", description="性价比均衡，适合日常转运",
-                            price_per_kg=68, min_weight=0.1, days_min=7, days_max=12),
-                models.Line(shop_id=1, name="极速空运专线", description="最快到手，适合急件",
-                            price_per_kg=98, min_weight=0.1, days_min=3, days_max=6),
-            ])
+        _sync_lines(db)
         if db.query(models.Notice).count() == 0:
             db.add(models.Notice(
                 shop_id=1,
@@ -38,6 +31,31 @@ def run():
         db.commit()
     finally:
         db.close()
+
+
+# 国际物流包清服务的两条线路（价格来自运营给的《国际物流费用说明》）。
+# 大连港清关，一周五个航班（周二至周六）。
+LINES = [
+    dict(name="精致小", description="适合个人日本直邮：单个包裹价值 400 元以内、重量 0.6kg 以内。"
+                                    "首重 0.6kg 45 元，续重 35 元/0.5kg",
+         first_weight=0.6, first_price=45, step_weight=0.5, step_price=35, max_value=400,
+         days_min=5, days_max=10),
+    dict(name="无忧草", description="适合价值 400-1000 元、重量超过 0.6kg 的包裹，直邮。"
+                                    "80 元/kg，续重 8 元/0.1kg",
+         first_weight=1, first_price=80, step_weight=0.1, step_price=8, max_value=1000,
+         days_min=5, days_max=10),
+]
+# 早期版本种进去的三条示例线路，换成上面两条后停用（老订单还引用着，所以不删）
+_OLD_SAMPLE_LINES = ("标准海运专线", "标准空运专线", "极速空运专线")
+
+
+def _sync_lines(db):
+    """按名字补齐 LINES 里的线路。已存在的不覆盖——上线后在数据库里改过的价格不会被重启冲掉。"""
+    for spec in LINES:
+        if db.query(models.Line).filter_by(name=spec["name"]).first() is None:
+            db.add(models.Line(shop_id=1, price_per_kg=0, **spec))
+    db.query(models.Line).filter(models.Line.name.in_(_OLD_SAMPLE_LINES)).update(
+        {"is_active": False}, synchronize_session=False)
 
 
 if __name__ == "__main__":

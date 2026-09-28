@@ -39,6 +39,22 @@ def saveNickName(db, member, params):
     return _member_dict(member)
 
 
+def saveProfile(db, member, params):
+    """「我的」页面编辑昵称和手机号——后台要靠它们认出包裹是谁的（微信登录拿不到这两样）。"""
+    if "nickname" in params:
+        nickname = to_str(params.get("nickname"), "", "昵称", max_len=64).strip()
+        if not nickname:
+            raise ApiError("请填写昵称")
+        member.nickname = nickname
+    if "mobile" in params:
+        mobile = to_str(params.get("mobile"), "", "手机号").strip()
+        if mobile and not _MOBILE_RE.match(mobile):
+            raise ApiError("手机号格式不正确")
+        member.mobile = mobile
+    db.commit()
+    return _member_dict(member)
+
+
 def modifyCN(db, member, params):
     """更新用户展示昵称，附带竞品的清关码字段位置"""
     nickname = to_str(params.get("nickname"), "", "昵称", max_len=64)

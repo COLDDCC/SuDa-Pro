@@ -1,9 +1,9 @@
 """System.Address.* — 省市区三级联动、物流线路、公告、运费计算器"""
-from decimal import Decimal, ROUND_UP
+from decimal import Decimal
 
 from ..errors import ApiError
 from ..params import to_int, to_id, to_decimal
-from .. import models, regions
+from .. import models, regions, pricing
 
 
 def province(db, member, params):
@@ -29,8 +29,11 @@ def _line_dict(l: models.Line):
         "id": l.id,
         "name": l.name,
         "description": l.description,
-        "price_per_kg": str(l.price_per_kg),
-        "min_weight": str(l.min_weight),
+        "first_weight": str(l.first_weight),
+        "first_price": str(l.first_price),
+        "step_weight": str(l.step_weight),
+        "step_price": str(l.step_price),
+        "max_value": str(l.max_value) if l.max_value is not None else None,
         "days_min": l.days_min,
         "days_max": l.days_max,
     }
@@ -38,7 +41,7 @@ def _line_dict(l: models.Line):
 
 def lineList(db, member, params):
     shop_id = to_int(params.get("shop_id"), 1, "shop_id")
-    rows = db.query(models.Line).filter_by(shop_id=shop_id, is_active=True).all()
+    rows = db.query(models.Line).filter_by(shop_id=shop_id, is_active=True).order_by(models.Line.id).all()
     return [_line_dict(l) for l in rows]
 
 
@@ -51,30 +54,32 @@ def lineInfo(db, member, params):
 
 
 def estimateFee(db, member, params):
-    """差异化功能：运费计算器。按重量(kg)算出各条线路的预估费用，首页直接展示。
-    params: {weight}
+    """差异化功能：运费计算器。按重量(kg)算出各条线路的费用，首页和下单页都用它。
+    params: {weight, value?}  value = 包裹价值(元)，填了会标出价值超限、不能走的线路。
 
-    weight 允许为 0：下单页选中的包裹净重可能都没填（0），实际下单时按线路最低
-    计费重量收费，这里要给出同样的金额，而不是让前端显示 ¥0。
+    weight 允许为 0：包裹还没称重、用户也没填净重时，按首重收费，要显示首重价而不是 ¥0。
     """
-    weight = to_decimal(params.get("weight"), "0", "重量")
+    weight = to_decimal(params.get("weight"), "0", "重量", max_value=Decimal("10000"))
     if weight < 0:
         raise ApiError("请输入有效的重量")
+    value = to_decimal(params.get("value"), "0", "包裹价值", max_value=Decimal("100000000"))
 
-    lines = db.query(models.Line).filter_by(is_active=True).all()
+    lines = db.query(models.Line).filter_by(is_active=True).order_by(models.Line.id).all()
     result = []
     for l in lines:
-        billable = max(weight, l.min_weight)
-        fee = (billable * l.price_per_kg).quantize(Decimal("0.01"), rounding=ROUND_UP)
+        if l.first_weight is None:
+            continue  # 老的按公斤单价计费的线路，已不再使用
+        problem = pricing.value_error(l, value if value > 0 else None)
         result.append({
             "line_id": l.id,
             "name": l.name,
-            "billable_weight": str(billable),
-            "fee": str(fee),
+            "description": l.description,
+            "fee": str(pricing.shipping_fee(l, weight)),
+            "available": problem is None,
+            "unavailable_reason": problem or "",
             "days_min": l.days_min,
             "days_max": l.days_max,
         })
-    result.sort(key=lambda r: Decimal(r["fee"]))
     return result
 
 

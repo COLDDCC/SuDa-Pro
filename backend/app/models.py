@@ -75,15 +75,22 @@ class Warehouse(Base):
 
 
 class Line(Base):
-    """物流线路"""
+    """物流线路。按"首重 + 续重"计费（见 pricing.shipping_fee）：
+    重量 <= first_weight 收 first_price；超出部分每 step_weight（不足按一档算）加收 step_price。"""
     __tablename__ = "lines"
 
     id = Column(Integer, primary_key=True)
     shop_id = Column(Integer, default=1)
     name = Column(String(64), nullable=False)
     description = Column(Text, default="")
-    price_per_kg = Column(Numeric(10, 2), nullable=False)
+    # 老的"单价 x 最低计费重量"模型，保留列只为兼容已有数据库，计费不再使用
+    price_per_kg = Column(Numeric(10, 2), nullable=False, default=0)
     min_weight = Column(Numeric(10, 2), default=0.1)
+    first_weight = Column(Numeric(10, 3), nullable=True)   # 首重 kg
+    first_price = Column(Numeric(10, 2), nullable=True)    # 首重价格 元
+    step_weight = Column(Numeric(10, 3), nullable=True)    # 续重每档 kg
+    step_price = Column(Numeric(10, 2), nullable=True)     # 续重每档价格 元
+    max_value = Column(Numeric(10, 2), nullable=True)      # 包裹申报价值上限 元，空 = 不限
     days_min = Column(Integer, default=7)
     days_max = Column(Integer, default=15)
     is_active = Column(Boolean, default=True)
@@ -109,13 +116,19 @@ class Package(Base):
     STATUS_SHIPPED = "shipped"       # 已发货
     STATUS_CANCELLED = "cancelled"   # 已取消
 
+    # 用户预报时自己选的"包裹现在到哪一步了"（仅供仓库参考，跟上面的仓库状态无关）
+    LOGISTICS_NOT_SHIPPED = "not_shipped"   # 卖家未发货
+    LOGISTICS_IN_TRANSIT = "in_transit"     # 已发货，在路上
+    LOGISTICS_DELIVERED = "delivered"       # 快递显示已签收（应该已经到仓）
+    LOGISTICS_CHOICES = (LOGISTICS_NOT_SHIPPED, LOGISTICS_IN_TRANSIT, LOGISTICS_DELIVERED)
+
     id = Column(Integer, primary_key=True)
     member_id = Column(Integer, ForeignKey("members.id"), nullable=False)
     shop_id = Column(Integer, default=1)
     warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
 
-    express_num = Column(String(64), nullable=False)  # 国际快递单号
-    good_name = Column(String(128), nullable=False)
+    express_num = Column(String(64), nullable=False)  # 日本国内快递单号
+    good_name = Column(String(128), nullable=False, default="")
     count = Column(Integer, default=1)
     netwt = Column(Numeric(10, 3), default=0)  # 净重 kg
     price = Column(Numeric(10, 2), default=0)
@@ -128,6 +141,8 @@ class Package(Base):
     is_second_goods = Column(Boolean, default=False)
 
     status = Column(String(16), default=STATUS_PENDING)
+    logistics_status = Column(String(16), default=LOGISTICS_IN_TRANSIT)
+    actual_weight = Column(Numeric(10, 3), nullable=True)  # 仓库入库时实际称重 kg，计费以它为准
     created_at = Column(DateTime, default=now)
     inbound_at = Column(DateTime, nullable=True)
 
@@ -153,14 +168,23 @@ class Order(Base):
     shop_id = Column(Integer, default=1)
 
     inter_order = Column(String(64), default="")  # 国际转运单号（发货后填）
+    inter_carrier = Column(String(32), default="")  # 国际转运单号对应的快递公司编码（快递100 的 com），空 = 自动识别
     remark = Column(Text, default="")
     status = Column(String(16), default=STATUS_PENDING)
 
     total_weight = Column(Numeric(10, 3), default=0)
-    total_fee = Column(Numeric(10, 2), default=0)
+    shipping_fee = Column(Numeric(10, 2), default=0)  # 运费
+    storage_fee = Column(Numeric(10, 2), default=0)   # 囤货费（确认收款时锁定）
+    total_fee = Column(Numeric(10, 2), default=0)     # 运费 + 囤货费
+
+    # 线下收款：用户加客服微信转账，客服在后台确认
+    paid = Column(Boolean, default=False)
+    paid_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=now)
     shipped_at = Column(DateTime, nullable=True)
+    signed_at = Column(DateTime, nullable=True)
+    tracking_synced_at = Column(DateTime, nullable=True)  # 上次从快递100 拉轨迹的时间
 
     member = relationship("Member", back_populates="orders")
     address = relationship("Address")
@@ -189,5 +213,6 @@ class OrderTrack(Base):
     time = Column(DateTime, default=now)
     status_text = Column(String(255), nullable=False)
     location = Column(String(128), default="")
+    source = Column(String(16), default="staff")  # staff / system / kuaidi100 / member
 
     order = relationship("Order", back_populates="tracks")

@@ -11,11 +11,12 @@ from .database import Base, engine, get_db
 from .router import resolve, MethodNotFound
 from .errors import ApiError
 from .auth import get_current_member
-from . import seed
+from . import seed, migrate
 
 logger = logging.getLogger("suda")
 
 Base.metadata.create_all(bind=engine)
+migrate.run()
 
 app = FastAPI(title="XX转运Pro API")
 

@@ -98,6 +98,24 @@
     z-index: 10;
   }
   .toast.show { opacity: 1; }
+  .card { background: #fff; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 2px 10px rgba(20,30,60,.05); }
+  .card h3 { margin: 0 0 10px; font-size: 14px; }
+  .form-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .form-row input, .form-row select, td select { padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+  .form-row button, .toolbar button.primary, td button.primary { background: #2b6cff; color: #fff; border: none; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 13px; }
+  td button { border: 1px solid #2b6cff !important; }
+  td button:disabled { border-color: #ccc !important; color: #aaa; cursor: not-allowed; }
+  input.w80 { width: 80px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; white-space: nowrap; }
+  .tag.warn { background: #fff4e5; color: #c26a00; }
+  .tag.ok { background: #e8f7ee; color: #1a8a4a; }
+  .tag.info { background: #eef3ff; color: #2b6cff; }
+  .fee { font-weight: 600; color: #2b6cff; }
+  .table-wrap { overflow-x: auto; }
+  @media (max-width: 640px) {
+    header, .tabs, main { padding-left: 16px; padding-right: 16px; }
+    .key-box input { width: 150px; }
+  }
 </style>
 </head>
 <body>
@@ -111,40 +129,56 @@
 </header>
 
 <div class="tabs">
-  <button class="tab-btn active" data-tab="packages" onclick="switchTab('packages')">待入库包裹</button>
+  <button class="tab-btn active" data-tab="packages" onclick="switchTab('packages')">包裹入库</button>
   <button class="tab-btn" data-tab="pending-orders" onclick="switchTab('pending-orders')">待发货订单</button>
   <button class="tab-btn" data-tab="shipped-orders" onclick="switchTab('shipped-orders')">运输中订单</button>
 </div>
 
 <main>
   <div class="panel active" id="panel-packages">
-    <div class="toolbar"><button onclick="loadPackages()">刷新</button></div>
-    <table>
+    <div class="card">
+      <h3>登记没有预报的包裹（按包裹上写的会员代码）</h3>
+      <div class="form-row">
+        <input id="new-code" placeholder="会员代码 *" style="width: 110px;" />
+        <input id="new-express" placeholder="快递单号 *" style="width: 160px;" />
+        <input id="new-name" placeholder="品名（选填）" style="width: 140px;" />
+        <input id="new-weight" class="w80" placeholder="实重kg *" inputmode="decimal" />
+        <button onclick="createPackage()">登记入库</button>
+      </div>
+    </div>
+    <div class="toolbar">
+      <input id="pkg-keyword" class="inline" placeholder="搜快递单号/会员代码/手机/昵称" style="width: 220px;"
+        onkeydown="if (event.key === 'Enter') loadPackages()" />
+      <button onclick="loadPackages()">搜索 / 刷新</button>
+    </div>
+    <div class="table-wrap"><table>
       <thead><tr>
-        <th>会员</th><th>快递单号</th><th>品名</th><th>数量</th><th>净重(kg)</th><th>状态</th><th>操作</th>
+        <th>会员</th><th>快递单号</th><th>品名</th><th>用户说</th><th>预报净重</th><th>状态</th><th>入库称重(kg)</th>
       </tr></thead>
       <tbody id="packages-body"></tbody>
-    </table>
+    </table></div>
   </div>
 
   <div class="panel" id="panel-pending-orders">
-    <div class="toolbar"><button onclick="loadPendingOrders()">刷新</button></div>
-    <table>
+    <div class="toolbar"><button onclick="loadPendingOrders()">刷新</button>
+      <span class="muted">流程：包裹都称重后 → 用户加微信转账 → 点「确认收款」→ 填单号发货</span></div>
+    <div class="table-wrap"><table>
       <thead><tr>
-        <th>订单号</th><th>会员</th><th>收件地址</th><th>线路</th><th>件数/重量</th><th>费用</th><th>操作</th>
+        <th>订单</th><th>会员</th><th>收件人（清关实名）</th><th>包裹 / 实重</th><th>费用</th><th>收款</th><th>发货</th>
       </tr></thead>
       <tbody id="pending-orders-body"></tbody>
-    </table>
+    </table></div>
   </div>
 
   <div class="panel" id="panel-shipped-orders">
-    <div class="toolbar"><button onclick="loadShippedOrders()">刷新</button></div>
-    <table>
+    <div class="toolbar"><button onclick="loadShippedOrders()">刷新</button>
+      <span class="muted" id="kuaidi100-hint"></span></div>
+    <div class="table-wrap"><table>
       <thead><tr>
-        <th>订单号</th><th>会员</th><th>国际转运单号</th><th>追加物流轨迹</th>
+        <th>订单</th><th>会员</th><th>国际转运单号</th><th>追加物流轨迹 / 签收</th>
       </tr></thead>
       <tbody id="shipped-orders-body"></tbody>
-    </table>
+    </table></div>
   </div>
 </main>
 
@@ -152,27 +186,31 @@
 
 <script>
 const BASE_URL = location.origin;
+let CARRIERS = [{ code: '', name: '自动识别' }];
 
 function getKey() {
-  return localStorage.getItem('suda_staff_key') || '';
+  try { return localStorage.getItem('suda_staff_key') || ''; } catch (e) { return ''; }
 }
 
 function saveKey() {
   const v = document.getElementById('staffKey').value.trim();
-  if (v) localStorage.setItem('suda_staff_key', v);
+  try { if (v) localStorage.setItem('suda_staff_key', v); } catch (e) { /* 隐私模式下存不了，本次会话仍可用 */ }
   toast('已保存');
-  loadActivePanel();
+  init();
 }
 
+let toastTimer = null;
 function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 1800);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
 async function call(method, params = {}) {
-  const body = { method, params: { ...params, staff_key: getKey() } };
+  const key = document.getElementById('staffKey').value.trim() || getKey();
+  const body = { method, params: { ...params, staff_key: key } };
   const res = await fetch(`${BASE_URL}/api`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -192,8 +230,15 @@ function escapeHtml(s) {
   }[c]));
 }
 
+function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+function memberCell(x) {
+  return `<b>${escapeHtml(x.member_code)}</b> ${escapeHtml(x.member_nickname || '')}
+    <div class="muted">${escapeHtml(x.member_mobile || '未留手机号')}</div>`;
+}
+
 const STATUS_TEXT = {
-  pending: '待入库', inbound: '已入库', ordered: '待发货', shipped: '已发货', cancelled: '已取消',
+  pending: '待入库', inbound: '已入库', ordered: '已下单', shipped: '已发货', cancelled: '已取消',
 };
 
 function switchTab(tab) {
@@ -209,63 +254,147 @@ function loadActivePanel() {
   if (active === 'shipped-orders') loadShippedOrders();
 }
 
+// ---- 包裹入库 ----
+
 async function loadPackages() {
   const body = document.getElementById('packages-body');
   body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
   try {
-    const list = await call('System.Order.staffPendingPackages');
+    const list = await call('System.Order.staffPendingPackages', { keyword: val('pkg-keyword') });
     if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无待处理包裹</td></tr>'; return; }
-    body.innerHTML = list.map((p) => `
+    body.innerHTML = list.map((p) => {
+      let state = escapeHtml(STATUS_TEXT[p.status] || p.status);
+      if (p.status === 'ordered') state = p.inbound_at ? '已下单，<span class="tag warn">缺称重</span>' : '已下单，待入库';
+      if (p.storage_days_over > 0) state += ` <span class="tag warn">超期${p.storage_days_over}天</span>`;
+      let action;
+      if (!p.inbound_at) {
+        action = `<div class="row-flex"><input class="inline w80" id="w-${p.id}" placeholder="实重kg" inputmode="decimal" />
+          <button onclick="markInbound(${p.id})">标记入库</button></div>`;
+      } else {
+        const label = p.actual_weight === null ? '补录称重' : '改重量';
+        action = `<div class="row-flex">${p.actual_weight === null ? '<span class="tag warn">未称重</span>' : `<b>${escapeHtml(p.actual_weight)}</b>`}
+          <input class="inline w80" id="w-${p.id}" placeholder="实重kg" inputmode="decimal" />
+          <button onclick="setWeight(${p.id})">${label}</button></div>`;
+      }
+      return `
       <tr>
-        <td>${escapeHtml(p.member_nickname || '未设置昵称')}<div class="muted">${escapeHtml(p.member_mobile || '')}</div></td>
+        <td>${memberCell(p)}</td>
         <td>${escapeHtml(p.express_num)}</td>
-        <td>${escapeHtml(p.good_name)}</td>
-        <td>${escapeHtml(p.count)}</td>
+        <td>${escapeHtml(p.good_name || '—')}</td>
+        <td>${escapeHtml(p.logistics_text || '')}</td>
         <td>${escapeHtml(p.netwt)}</td>
-        <td>${p.status === 'ordered' ? '已下单，待入库' : escapeHtml(STATUS_TEXT[p.status] || p.status)}</td>
-        <td>${!p.inbound_at ? `<button onclick="markInbound(${p.id})">标记入库</button>` : '<span class="muted">已入库，等待客户下单</span>'}</td>
-      </tr>
-    `).join('');
+        <td>${state}</td>
+        <td>${action}</td>
+      </tr>`;
+    }).join('');
   } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }
 }
 
 async function markInbound(id) {
-  await call('System.Order.markInbound', { id });
-  toast('已标记入库');
+  const w = val(`w-${id}`);
+  if (!w) { toast('请先填实际称重(kg)'); return; }
+  await call('System.Order.markInbound', { id, actual_weight: w });
+  toast('已入库');
   loadPackages();
+}
+
+async function setWeight(id) {
+  const w = val(`w-${id}`);
+  if (!w) { toast('请先填实际称重(kg)'); return; }
+  await call('System.Order.setWeight', { id, actual_weight: w });
+  toast('重量已更新');
+  loadPackages();
+}
+
+async function createPackage() {
+  const params = {
+    member_code: val('new-code'), express_num: val('new-express'),
+    good_name: val('new-name'), actual_weight: val('new-weight'),
+  };
+  if (!params.member_code || !params.express_num || !params.actual_weight) { toast('会员代码、快递单号、实重都要填'); return; }
+  await call('System.Order.staffCreatePackage', params);
+  toast('已登记入库');
+  ['new-code', 'new-express', 'new-name', 'new-weight'].forEach((id) => { document.getElementById(id).value = ''; });
+  loadPackages();
+}
+
+// ---- 待发货订单 ----
+
+function feeCell(o) {
+  const tag = o.weight_confirmed ? '' : ' <span class="tag warn">预估</span>';
+  const storage = Number(o.storage_fee) > 0 ? `<div class="muted">运费 ${escapeHtml(o.shipping_fee)} + 囤货 ${escapeHtml(o.storage_fee)}</div>` : '';
+  return `<span class="fee">¥${escapeHtml(o.total_fee)}</span>${tag}${storage}
+    <div class="muted">${escapeHtml(o.line_name)} · ${escapeHtml(o.total_weight)}kg</div>`;
+}
+
+function carrierSelect(id) {
+  return `<select id="carrier-${id}">${CARRIERS.map((c) => `<option value="${escapeHtml(c.code)}">${escapeHtml(c.name)}</option>`).join('')}</select>`;
 }
 
 async function loadPendingOrders() {
   const body = document.getElementById('pending-orders-body');
-  body.innerHTML = '<tr><td colspan="6" class="empty">加载中...</td></tr>';
+  body.innerHTML = '<tr><td colspan="7" class="empty">加载中...</td></tr>';
   try {
     const list = await call('System.Order.staffOrders', { status: 'pending' });
-    if (!list.length) { body.innerHTML = '<tr><td colspan="6" class="empty">暂无待发货订单</td></tr>'; return; }
-    body.innerHTML = list.map((o) => `
+    if (!list.length) { body.innerHTML = '<tr><td colspan="7" class="empty">暂无待发货订单</td></tr>'; return; }
+    body.innerHTML = list.map((o) => {
+      // 收款前可以在这里补录/修改已入库包裹的重量（收款后金额锁定）
+      const pkgs = o.packages.map((p) => {
+        const weight = p.actual_weight === null
+          ? `<span class="tag warn">${p.inbound_at ? '未称重' : '未入库'}</span>` : `${escapeHtml(p.actual_weight)}kg`;
+        const edit = !o.paid && p.inbound_at
+          ? ` <input class="inline w80" id="ow-${p.id}" placeholder="改重量" inputmode="decimal" />
+             <button onclick="setOrderWeight(${p.id})">改</button>` : '';
+        return `<div class="row-flex" style="margin-bottom:4px">${escapeHtml(p.good_name || p.express_num)}：${weight}${edit}</div>`;
+      }).join('');
+      let pay;
+      if (o.paid) pay = '<span class="tag ok">已收款</span>';
+      else if (!o.weight_confirmed) pay = '<span class="tag warn">等包裹称重</span>';
+      else pay = `<span class="tag info">待付款</span><div style="margin-top:6px"><button onclick="markPaid(${o.id}, '${escapeHtml(o.total_fee)}')">确认收款</button></div>`;
+      const ship = o.paid
+        ? `<div class="row-flex">${carrierSelect(o.id)}<input class="inline" id="inter-${o.id}" placeholder="国际转运单号" />
+            <button onclick="markShipped(${o.id})">标记发货</button></div>`
+        : '<span class="muted">收款后才能发货</span>';
+      return `
       <tr>
-        <td>${escapeHtml(o.order_no)}</td>
-        <td>${escapeHtml(o.member_nickname || '')}<div class="muted">${escapeHtml(o.member_mobile || '')}</div></td>
-        <td>${escapeHtml(o.address.consigner)} ${escapeHtml(o.address.mobile)}<div class="muted">${escapeHtml(o.address.province)}${escapeHtml(o.address.city)}${escapeHtml(o.address.district)}${escapeHtml(o.address.address)}</div></td>
-        <td>${escapeHtml(o.line_name)}</td>
-        <td>${escapeHtml(o.item_count)}件 / ${escapeHtml(o.total_weight)}kg</td>
-        <td>
-          <div class="row-flex">
-            <input class="inline" id="inter-${o.id}" placeholder="国际转运单号" />
-            <button onclick="markShipped(${o.id})">标记发货</button>
-          </div>
-        </td>
-      </tr>
-    `).join('');
-  } catch (e) { body.innerHTML = '<tr><td colspan="6" class="empty">加载失败</td></tr>'; }
+        <td>${escapeHtml(o.order_no)}${o.remark ? `<div class="muted">备注：${escapeHtml(o.remark)}</div>` : ''}</td>
+        <td>${memberCell(o)}</td>
+        <td>${escapeHtml(o.address.consigner)} ${escapeHtml(o.address.mobile)}
+          <div class="muted">${escapeHtml(o.address.idnumber)}</div>
+          <div class="muted">${escapeHtml(o.address.province)}${escapeHtml(o.address.city)}${escapeHtml(o.address.district)}${escapeHtml(o.address.address)}</div></td>
+        <td>${pkgs}</td>
+        <td>${feeCell(o)}</td>
+        <td>${pay}</td>
+        <td>${ship}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty">加载失败</td></tr>'; }
+}
+
+async function setOrderWeight(pkgId) {
+  const w = val(`ow-${pkgId}`);
+  if (!w) { toast('请先填实际称重(kg)'); return; }
+  await call('System.Order.setWeight', { id: pkgId, actual_weight: w });
+  toast('重量已更新，运费已重算');
+  loadPendingOrders();
+}
+
+async function markPaid(id, fee) {
+  if (!confirm(`确认已经收到这笔订单的 ¥${fee}？确认后金额锁定，不能再改重量。`)) return;
+  await call('System.Order.markPaid', { order_id: id });
+  toast('已确认收款');
+  loadPendingOrders();
 }
 
 async function markShipped(id) {
-  const inter = document.getElementById(`inter-${id}`).value.trim();
+  const inter = val(`inter-${id}`);
   if (!inter) { toast('请填写国际转运单号'); return; }
-  await call('System.Order.markShipped', { order_id: id, inter_order: inter });
+  await call('System.Order.markShipped', { order_id: id, inter_order: inter, inter_carrier: val(`carrier-${id}`) });
   toast('已标记发货');
   loadPendingOrders();
 }
+
+// ---- 运输中订单 ----
 
 async function loadShippedOrders() {
   const body = document.getElementById('shipped-orders-body');
@@ -273,11 +402,12 @@ async function loadShippedOrders() {
   try {
     const list = await call('System.Order.staffOrders', { status: 'shipped' });
     if (!list.length) { body.innerHTML = '<tr><td colspan="4" class="empty">暂无运输中订单</td></tr>'; return; }
+    const carrierName = (code) => (CARRIERS.find((c) => c.code === code) || { name: code }).name;
     body.innerHTML = list.map((o) => `
       <tr>
-        <td>${escapeHtml(o.order_no)}</td>
-        <td>${escapeHtml(o.member_nickname || '')}<div class="muted">${escapeHtml(o.member_mobile || '')}</div></td>
-        <td>${escapeHtml(o.inter_order)}</td>
+        <td>${escapeHtml(o.order_no)}<div class="muted">¥${escapeHtml(o.total_fee)} · ${escapeHtml(o.line_name)}</div></td>
+        <td>${memberCell(o)}</td>
+        <td>${escapeHtml(o.inter_order)}<div class="muted">${escapeHtml(carrierName(o.inter_carrier))}</div></td>
         <td>
           <div class="row-flex">
             <input class="inline" id="track-${o.id}" placeholder="例：已到达上海分拣中心" style="width: 220px;" />
@@ -306,8 +436,19 @@ async function markSigned(id) {
   loadShippedOrders();
 }
 
+async function init() {
+  try {
+    const res = await call('System.Order.staffCarriers');
+    CARRIERS = res.carriers;
+    document.getElementById('kuaidi100-hint').textContent = res.kuaidi100_enabled
+      ? '已接入快递100：用户打开订单时会自动拉取国际段轨迹，快递显示签收后自动签收'
+      : '未配置快递100（KUAIDI100_CUSTOMER / KUAIDI100_KEY），轨迹需要手动追加';
+  } catch (e) { /* key 不对时 call 已经提示过 */ }
+  loadActivePanel();
+}
+
 document.getElementById('staffKey').value = getKey();
-loadActivePanel();
+init();
 </script>
 </body>
 </html>
