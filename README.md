@@ -21,7 +21,7 @@ cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export STAFF_KEY=随便设一个字符串   # 仓库/客服操作用，见下面第 2 步
-export SERVICE_WECHAT=你的微信号     # 订单页让用户加这个微信转账付款
+# export SERVICE_WECHAT=微信号       # 订单页让用户加这个微信转账付款，默认 TrickTrick2222，要换人时再设
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8811
 ```
 

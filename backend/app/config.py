@@ -22,7 +22,8 @@ JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "30"))
 STAFF_KEY = os.environ.get("STAFF_KEY", "")
 
 # 线下收款：订单页展示客服微信号，用户加微信转账，客服在后台点"确认收款"。
-SERVICE_WECHAT = os.environ.get("SERVICE_WECHAT", "")
+# 默认是运营的微信号，换人时设置环境变量 SERVICE_WECHAT 覆盖即可。
+SERVICE_WECHAT = os.environ.get("SERVICE_WECHAT", "TrickTrick2222")
 
 # 囤货费：入库后 FREE_STORAGE_DAYS 天内免费，超出后每个包裹每天 STORAGE_FEE_PER_DAY 元
 FREE_STORAGE_DAYS = int(os.environ.get("FREE_STORAGE_DAYS", "30"))
