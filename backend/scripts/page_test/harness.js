@@ -25,6 +25,8 @@ global.wx = {
   redirectTo: (o) => nav('redirectTo', o, false),
   switchTab: (o) => nav('switchTab', o, true),
   stopPullDownRefresh: () => {},
+  setClipboardData: (o) => log.push(['clipboard', o.data]),
+  requestSubscribeMessage: (o) => { log.push(['subscribe', o.tmplIds]); o.complete && o.complete(); },
   request(o) {
     pending++;
     const delay = global.__delay ? global.__delay(o.data) : 0;
@@ -56,4 +58,9 @@ function loadPage(name) {
 }
 const idle = async () => { await new Promise((r) => setTimeout(r, 20)); while (pending) await new Promise((r) => setTimeout(r, 10)); await new Promise((r) => setTimeout(r, 20)); };
 const { call } = require(path.join(MP, 'utils/request.js'));
-module.exports = { loadPage, idle, storage, log, call };
+// 仓库/客服操作（需要后端的 STAFF_KEY，默认和 README 的示例一致可通过环境变量覆盖）
+const staff = (method, params) => fetch(require(path.join(MP, 'utils/config.js')).BASE_URL + '/api', {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ method, params: { ...params, staff_key: process.env.STAFF_KEY || '' } }),
+}).then((r) => r.json()).then((j) => { if (j.code !== 0) throw new Error(`${method}: ${j.msg}`); return j.data; });
+module.exports = { loadPage, idle, storage, log, call, staff };
