@@ -16,6 +16,10 @@ docs/plan.md   项目计划书 + 竞品接口清单
 
 ### 1. 启动后端
 
+> **Windows 用户最省事的办法**：装好 Python 后，进入 `backend` 文件夹，双击
+> `start_backend.bat`（第一次会自动安装依赖，窗口保持开着），再双击
+> `run_smoke_test.bat` 跑第 2 步的冒烟测试。默认 `STAFF_KEY=test123`。
+
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
