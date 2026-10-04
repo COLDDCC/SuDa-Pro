@@ -57,6 +57,8 @@ def estimateFee(db, member, params):
         weight = Decimal(str(params.get("weight", 0)))
     except Exception:
         raise ApiError("重量格式不正确")
+    if not weight.is_finite() or weight >= 10000000:
+        raise ApiError("重量格式不正确")
     if weight <= 0:
         raise ApiError("请输入有效的重量")
 

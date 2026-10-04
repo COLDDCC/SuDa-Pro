@@ -131,7 +131,11 @@ def updateAddress(db, member, params):
 def _apply_address_fields(a: models.Address, params):
     for field in ("consigner", "mobile", "address", "idnumber", "addressimg"):
         if field in params:
-            setattr(a, field, params[field])
+            value = params[field]
+            # 下面 _validate_address 会对这些字段 .strip()/正则匹配，传个列表进来会直接崩
+            if value is not None and not isinstance(value, str):
+                raise ApiError("地址信息格式不正确")
+            setattr(a, field, value)
     for field in ("province_id", "city_id", "district_id"):
         if field in params:
             setattr(a, field, params[field])

@@ -25,13 +25,30 @@ def _to_int(value, default, field_name):
         raise ApiError(f"{field_name}格式不正确")
 
 
+_DECIMAL_LIMIT = Decimal("10000000")
+
+
 def _to_decimal(value, default, field_name):
     if value in (None, ""):
         return Decimal(default)
     try:
-        return Decimal(str(value))
+        d = Decimal(str(value))
     except Exception:
         raise ApiError(f"{field_name}格式不正确")
+    # Decimal 认 "NaN"/"Infinity"：Infinity 净重能一路过预报和入库，到下单算运费
+    # 时才崩，这个包裹就永远发不出去了。1e999 这种有限但超大的值同理（quantize 会抛错），
+    # 上限按 models 里 Numeric(10, x) 列能存下的范围来定。
+    if not d.is_finite() or abs(d) >= _DECIMAL_LIMIT:
+        raise ApiError(f"{field_name}格式不正确")
+    return d
+
+
+def _to_str(value, field_name):
+    if value is None:
+        return ""
+    if not isinstance(value, (str, int)) or isinstance(value, bool):
+        raise ApiError(f"{field_name}格式不正确")
+    return str(value)
 
 
 # ---- 预报 / 包裹(竞品叫"商品" goods，其实就是包裹里的物品) ----
@@ -80,8 +97,8 @@ def parseTrackingText(db, member, params):
 
 def addforecast(db, member, params):
     """包裹预报 — 核心接口。用户告诉我们"有个包裹要来了"。"""
-    express_num = params.get("express_num") or params.get("way")
-    good_name = params.get("good_name")
+    express_num = _to_str(params.get("express_num") or params.get("way"), "快递单号")
+    good_name = _to_str(params.get("good_name"), "品名")
     if not express_num:
         raise ApiError("请填写快递单号")
     if not good_name:
@@ -102,16 +119,16 @@ def addforecast(db, member, params):
 
     p = models.Package(
         member_id=member.id,
-        shop_id=params.get("shop_id", 1),
+        shop_id=_to_int(params.get("shop_id"), 1, "shop_id"),
         express_num=express_num,
         good_name=good_name,
         count=count,
         netwt=netwt,
         price=price,
-        bar_code=params.get("bar_code", ""),
-        brand_name_cn=params.get("brand_name_cn", ""),
-        category=params.get("category", ""),
-        spec=params.get("spec", ""),
+        bar_code=_to_str(params.get("bar_code"), "条码"),
+        brand_name_cn=_to_str(params.get("brand_name_cn"), "品牌"),
+        category=_to_str(params.get("category"), "类别"),
+        spec=_to_str(params.get("spec"), "规格"),
         cc_registered_price=cc_registered_price,
         export_unit_price=export_unit_price,
         is_second_goods=bool(params.get("is_second_goods", False)),
@@ -216,7 +233,7 @@ def staffOrders(db, member, params):
 # ---- 下单发货 ----
 
 def getLine(db, member, params):
-    shop_id = params.get("shop_id", 1)
+    shop_id = _to_int(params.get("shop_id"), 1, "shop_id")
     rows = db.query(models.Line).filter_by(shop_id=shop_id, is_active=True).all()
     return [{
         "id": l.id, "name": l.name, "price_per_kg": str(l.price_per_kg),
@@ -265,7 +282,7 @@ def savePage(db, member, params):
         member_id=member.id,
         address_id=address_id,
         line_id=line_id,
-        shop_id=params.get("shop_id", 1),
+        shop_id=_to_int(params.get("shop_id"), 1, "shop_id"),
         remark=params.get("remark", ""),
         status=models.Order.STATUS_PENDING,
         total_weight=total_weight,

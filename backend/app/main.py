@@ -54,6 +54,8 @@ async def api_entry(request: Request, db: Session = Depends(get_db)):
     # 这种情况，get(key, default) 是不会用上 default 的（key 本身存在），
     # 之前这里裸调 body.get("method", "") 就被这种输入直接崩过。
     method = body.get("method") or ""
+    if not isinstance(method, str):
+        return {"code": 400, "msg": "method 必须是字符串", "data": None}
     params = body.get("params") or {}
     if not isinstance(params, dict):
         return {"code": 400, "msg": "params 必须是一个对象", "data": None}
